@@ -1,0 +1,431 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "The template create proxy server on ubuntu 18.04",
+  "Metadata": {},
+  "Parameters": {
+    "UbuntuAMI": {
+      "Description": "Provide Ubuntu AMI (https://cloud-images.ubuntu.com/locator/ec2/) check the URL for latest AMI",
+      "Type": "String",
+      "Default": "ami-0517fd6989f9ec881"
+    },
+    "keypair": {
+      "Description": "Select the Keypair",
+      "Type": "AWS::EC2::KeyPair::KeyName"
+    },
+    "InstanceType": {
+      "Description": "Amazon EC2 instance type",
+      "Type": "String",
+      "Default": "t3.small",
+      "AllowedValues": [
+        "t3.micro",
+        "t3.small",
+        "t3.medium",
+        "t3.large",
+        "t3.xlarge",
+        "t3.2xlarge",
+        "c5.large",
+        "c5.xlarge",
+        "c5.2xlarge",
+        "c5.4xlarge",
+        "c5.9xlarge",
+        "c5.12xlarge",
+        "m5.large",
+        "m5.xlarge",
+        "m5.2xlarge",
+        "m5.4xlarge",
+        "m5.8xlarge",
+        "m5.12xlarge"
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+    },
+    "VPC": {
+      "Type": "AWS::EC2::VPC::Id",
+      "Description": "VpcId of your existing Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be the VPC Id of an existing Virtual Private Cloud."
+    },
+    "Subnets": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a select existing subnets associated . They should be residing in the selected Virtual Private Cloud."
+    },
+    "ClientIPCIDR": {
+      "Type": "String",
+      "Default": "0.0.0.0/0",
+      "Description": "CIDR IP to be granted access by the SG, use 0.0.0.0/0 to accept all IPs"
+    },
+    "ClientName": {
+      "Type": "String",
+      "Default": "WorkmatesCore2cloud"
+    },
+    "OpenVPNIPPublic": {
+      "Description": "Enter Open VPN IP Address",
+      "Default": "0.0.0.0",
+      "Type": "String",
+      "MinLength": "6",
+      "MaxLength": "18",
+      "AllowedPattern": "^([0-9]+\\.){3}[0-9]+$"
+    },
+    "OpenVPNIPPrivate": {
+      "Description": "Enter Open VPN IP Address",
+      "Default": "0.0.0.0",
+      "Type": "String",
+      "MinLength": "6",
+      "MaxLength": "18",
+      "AllowedPattern": "^([0-9]+\\.){3}[0-9]+$"
+    }
+  },
+  "Mappings": {},
+  "Conditions": {},
+  "Resources": {
+    "myEIP": {
+      "Type": "AWS::EC2::EIP",
+      "Properties": {
+        "Domain": "vpc"
+      }
+    },
+    "AssociateManagementAccessPort": {
+      "Type": "AWS::EC2::EIPAssociation",
+      "Properties": {
+        "AllocationId": {
+          "Fn::GetAtt": [
+            "myEIP",
+            "AllocationId"
+          ]
+        },
+        "NetworkInterfaceId": {
+          "Ref": "myNetworkInterface"
+        }
+      }
+    },
+    "myNetworkInterface": {
+      "Type": "AWS::EC2::NetworkInterface",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "Subnets"
+        },
+        "Description": "Public Interface",
+        "GroupSet": [
+          {
+            "Ref": "EC2SecurityGroup"
+          }
+        ],
+        "SourceDestCheck": false,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Public ENI"
+          }
+        ]
+      }
+    },
+    "ProxyInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "KeyName": {
+          "Ref": "keypair"
+        },
+        "DisableApiTermination": true,
+        "ImageId": {
+          "Ref": "UbuntuAMI"
+        },
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${ClientName}-Squid-Proxy-Prod-Server"
+            }
+          },
+          {
+            "Key": "Env",
+            "Value": "Prod"
+          },
+          {
+            "Key": "Layer",
+            "Value": "Proxy"
+          },
+          {
+            "Key": "wm_backup",
+            "Value": "yes"
+          },
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ClientName"
+            }
+          },
+          {
+            "Key": "wm_rdays",
+            "Value": "7"
+          },
+          {
+            "Key": "Managedby",
+            "Value": "Workmates"
+          },
+          {
+            "Key": "wm-AutoStartStop",
+            "Value": "yes"
+          }
+        ],
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+              "VolumeType": "gp3",
+              "DeleteOnTermination": "true",
+              "VolumeSize": "10"
+            }
+          }
+        ],
+        "NetworkInterfaces": [
+          {
+            "NetworkInterfaceId": {
+              "Ref": "myNetworkInterface"
+            },
+            "DeviceIndex": 0
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash -xe\n",
+                "apt-get update -y\n",
+                "apt-get install -y python-setuptools\n",
+                "mkdir -p /opt/aws/bin\n",
+                "wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+                "python -m easy_install --script-dir /opt/aws/bin aws-cfn-bootstrap-latest.tar.gz\n",
+                "/opt/aws/bin/cfn-init -v ",
+                "         --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                "         --resource ProxyInstance ",
+                "         --configsets full_install ",
+                "         --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n",
+                "/opt/aws/bin/cfn-signal -e $? ",
+                "         --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                "         --resource ProxyInstance ",
+                "         --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n"
+              ]
+            ]
+          }
+        }
+      },
+      "CreationPolicy": {
+        "ResourceSignal": {
+          "Timeout": "PT15M",
+          "Count": "1"
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "configSets": {
+            "full_install": [
+              "install_and_enable_cfn_hup",
+              "install_and_setup"
+            ]
+          },
+          "install_and_enable_cfn_hup": {
+            "files": {
+              "/etc/cfn/cfn-hup.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[main]\n",
+                      "stack=",
+                      {
+                        "Ref": "AWS::StackId"
+                      },
+                      "\n",
+                      "region=",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              },
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[cfn-auto-reloader-hook]\n",
+                      "triggers=post.update\n",
+                      "path=Resources.ProxyInstance.Metadata.AWS::CloudFormation::Init\n",
+                      "action=/opt/aws/bin/cfn-init -v ",
+                      "         --stack ",
+                      {
+                        "Ref": "AWS::StackName"
+                      },
+                      "         --resource ProxyInstance ",
+                      "         --configsets full_install ",
+                      "         --region ",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n",
+                      "runas=root\n"
+                    ]
+                  ]
+                }
+              },
+              "/lib/systemd/system/cfn-hup.service": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[Unit]\n",
+                      "Description=cfn-hup daemon\n\n",
+                      "[Service]\n",
+                      "Type=simple\n",
+                      "ExecStart=/opt/aws/bin/cfn-hup\n",
+                      "Restart=always\n\n",
+                      "[Install]\n",
+                      "WantedBy=multi-user.target"
+                    ]
+                  ]
+                }
+              }
+            },
+            "commands": {
+              "01enable_cfn_hup": {
+                "command": "systemctl enable cfn-hup.service"
+              },
+              "02start_cfn_hup": {
+                "command": "systemctl start cfn-hup.service"
+              }
+            }
+          },
+          "install_and_setup":{
+            "commands": {
+              "01_Install_Update": {
+                "command": "sudo apt update && sudo apt install squid -y"
+              },
+              "02_change_http_allow": {
+                "command": "sed -i '1194s/deny/allow/g' /etc/squid/squid.conf"
+              },
+              "03_create_file": {
+                "command": "touch /etc/squid/blockwebsites.lst"
+              },
+              "04_add_text": {
+                "command": "sed -i '1197s\/$\/\\n\\0# Domain blockwebsites\/' \/etc\/squid\/squid.conf"
+              },
+              "05_add_blockwebsite": {
+                "command": "sed -i '1198s/$\/\\n\\0acl blocksitelist dstdomain \\\"\\\/etc\\\/squid\\\/blockwebsites.lst\\\"/' /etc/squid/squid.conf"
+              },
+              "06_add_blockwebsite": {
+                "command": "sed -i '1199s/$\/\\n\\0http_access deny blocksitelist/' /etc/squid/squid.conf"
+              },
+              "07_restart_squid": {
+                "command": "sudo service squid restart"
+              }
+            }
+          }
+        }
+      }
+    },
+    "EC2SecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable access to the App-and-DB",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {
+              "Ref": "ClientIPCIDR"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "15.206.48.168/32",
+            "Description": "WorkmatesCore2cloud-Prod-VPN-1a"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "10.3.1.105/32",
+            "Description": "WorkmatesCore2cloud-Prod-VPN-1a"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {
+              "Fn::Join": [
+                "/",
+                [
+                  {
+                    "Ref": "OpenVPNIPPublic"
+                  },
+                  "32"
+                ]
+              ]
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {
+              "Fn::Join": [
+                "/",
+                [
+                  {
+                    "Ref": "OpenVPNIPPrivate"
+                  },
+                  "32"
+                ]
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "ClientName"
+                  },
+                  "Squid-Proxy-Prod-Server"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {}
+}

@@ -1,0 +1,241 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "WorkmatesCore2Cloud AWS IAM Role (Cross Account Access) setup",
+    "Parameters": {
+        "WMAwsAccountId": {
+            "Type": "Number",
+            "Default": "464315288610",
+            "Description": "Please enter your master account AWS ID here."
+        }
+    },
+    "Resources": {
+        "WmCrossAccountAdminRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "WM",
+                            "AdminRole"
+                        ]
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/AdministratorAccess"
+                ],
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": {
+                                    "Fn::Sub": "arn:aws:iam::${WMAwsAccountId}:root"
+                                }
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "WmCrossAccountBillingRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "WM",
+                            "BillingRole"
+                        ]
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/job-function/Billing",
+                    "arn:aws:iam::aws:policy/ReadOnlyAccess"
+                ],
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": {
+                                    "Fn::Sub": "arn:aws:iam::${WMAwsAccountId}:root"
+                                }
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "WmCrossAccountL1SupportRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "WM",
+                            "L1SupportRole"
+                        ]
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/job-function/Billing",
+                    "arn:aws:iam::aws:policy/ReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/CloudWatchFullAccess",
+                    "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+                ],
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": {
+                                    "Fn::Sub": "arn:aws:iam::${WMAwsAccountId}:root"
+                                }
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "WmCrossAccountL2SupportRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "WM",
+                            "L2SupportRole"
+                        ]
+                    ]
+                },
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": {
+                                    "Fn::Sub": "arn:aws:iam::${WMAwsAccountId}:root"
+                                }
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "WmCrossAccountL2SupportPolicy": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "WML2SupportPolicy",
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "Allowall",
+                            "Effect": "Allow",
+                            "Action": "*",
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "DenyDelete",
+                            "Effect": "Deny",
+                            "Action": [
+                                "apigateway:DELETE",
+                                "autoscaling:Delete*",
+                                "autoscaling:SuspendProcesses",
+                                "acm:RemoveTagsFromCertificate",
+                                "acm:DeleteCertificate",
+                                "cloudformation:Delete*",
+                                "cloudfront:Delete*",
+                                "cloudtrail:Delete*",
+                                "directconnect:Delete*",
+                                "ds:Delete*",
+                                "ds:Remove*",
+                                "dms:Delete*",
+                                "dynamodb:Delete*",
+                                "ec2:Delete*",
+                                "ec2:DeregisterImage",
+                                "ec2:Purchase*",
+                                "ec2:TerminateInstances",
+                                "ec2:ModifyReservedInstances",
+                                "elasticbeanstalk:Delete*",
+                                "elasticloadbalancing:DeleteLoadBalancer",
+                                "iam:Delete*",
+                                "lambda:Delete*",
+                                "rds:Delete*",
+                                "route53:Delete*",
+                                "s3:Delete*"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "DenyDetachL2Policy",
+                            "Effect": "Deny",
+                            "Action": [
+                                "iam:DetachRolePolicy",
+                                "iam:DetachGroupPolicy",
+                                "iam:DetachUserPolicy"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "ArnEquals": {
+                                    "iam:PolicyARN": "arn:aws:iam::*:policy/*L2*"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "DenyAttachFullPolicyToUserAndGroup",
+                            "Effect": "Deny",
+                            "Action": [
+                                "iam:AttachRolePolicy",
+                                "iam:AttachGroupPolicy",
+                                "iam:AttachUserPolicy"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "ArnEquals": {
+                                    "iam:PolicyARN": "arn:aws:iam::*:policy/*Full*"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "DenyAttachAdminPolicyToUserAndGroup",
+                            "Effect": "Deny",
+                            "Action": [
+                                "iam:AttachRolePolicy",
+                                "iam:AttachGroupPolicy",
+                                "iam:AttachUserPolicy"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "ArnEquals": {
+                                    "iam:PolicyARN": "arn:aws:iam::*:policy/*Admin*"
+                                }
+                            }
+                        }
+                    ]
+                },
+                "Roles": [
+                    {
+                        "Ref": "WmCrossAccountL2SupportRole"
+                    }
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,320 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "WorkmatesCore2Cloud AWS IAM Role (Cross Account Access) setup",
+    "Parameters": {},
+  "Resources": {
+        "WorkmatesCrossAccountAdminRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "Workmates-SSO",
+                            "AdminRole"
+                        ]
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/AdministratorAccess"
+                ],
+                "AssumeRolePolicyDocument": {
+                  "Statement": [
+                    {
+                      "Effect": "Allow",
+                      "Principal": {
+                        "Federated": {"Fn::Sub":"arn:aws:iam::${AWS::AccountId}:saml-provider/Workmates-SSO-Admin"}
+                      },
+                      "Action": "sts:AssumeRoleWithSAML",
+                      "Condition": {
+                        "StringEquals": {
+                          "SAML:aud": "https://signin.aws.amazon.com/saml"
+                        }
+                      }
+                    }
+                  ]
+                }
+            }
+        },
+        "WorkmatesCrossAccountL1SupportRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "Workmates-SSO",
+                            "L1SupportRole"
+                        ]
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/job-function/Billing",
+                    "arn:aws:iam::aws:policy/ReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/CloudWatchFullAccess",
+                    "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+
+                ],
+                "AssumeRolePolicyDocument": {
+                  "Statement": [
+                     {
+                       "Effect": "Allow",
+                       "Principal": {
+                         "Federated": {"Fn::Sub":"arn:aws:iam::${AWS::AccountId}:saml-provider/Workmates-SSO-L1"}
+                       },
+                       "Action": "sts:AssumeRoleWithSAML",
+                       "Condition": {
+                         "StringEquals": {
+                           "SAML:aud": "https://signin.aws.amazon.com/saml"
+                         }
+                       }
+                     }
+                   ]
+                }
+            }
+        },
+        "WorkmatesCrossAccountL2SupportRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "Workmates-SSO",
+                            "L2SupportRole"
+                        ]
+                    ]
+                },
+                "AssumeRolePolicyDocument": {
+                  "Statement": [
+                     {
+                       "Effect": "Allow",
+                       "Principal": {
+                         "Federated": {"Fn::Sub":"arn:aws:iam::${AWS::AccountId}:saml-provider/Workmates-SSO-L2"}
+                       },
+                       "Action": "sts:AssumeRoleWithSAML",
+                       "Condition": {
+                         "StringEquals": {
+                           "SAML:aud": "https://signin.aws.amazon.com/saml"
+                         }
+                       }
+                     }
+                   ]
+                }
+            }
+        },
+        "WmCrossAccountL2SupportPolicySSO": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "WML2SupportPolicy",
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "Allowall",
+                            "Effect": "Allow",
+                            "Action": "*",
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "DenyDelete",
+                            "Effect": "Deny",
+                            "Action": [
+                                "apigateway:DELETE",
+                                "autoscaling:Delete*",
+                                "autoscaling:SuspendProcesses",
+                                "acm:RemoveTagsFromCertificate",
+                                "acm:DeleteCertificate",
+                                "cloudformation:Delete*",
+                                "cloudfront:Delete*",
+                                "cloudtrail:Delete*",
+                                "directconnect:Delete*",
+                                "ds:Delete*",
+                                "ds:Remove*",
+                                "dms:Delete*",
+                                "dynamodb:Delete*",
+                                "ec2:Delete*",
+                                "ec2:DeregisterImage",
+                                "ec2:Purchase*",
+                                "ec2:TerminateInstances",
+                                "ec2:ModifyReservedInstances",
+                                "elasticbeanstalk:Delete*",
+                                "elasticloadbalancing:DeleteLoadBalancer",
+                                "iam:Delete*",
+                                "lambda:Delete*",
+                                "rds:Delete*",
+                                "route53:Delete*",
+                                "s3:Delete*"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "DenyDetachL2Policy",
+                            "Effect": "Deny",
+                            "Action": [
+                                "iam:DetachRolePolicy",
+                                "iam:DetachGroupPolicy",
+                                "iam:DetachUserPolicy"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "ArnEquals": {
+                                    "iam:PolicyARN": "arn:aws:iam::*:policy/*L2*"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "DenyAttachFullPolicyToUserAndGroup",
+                            "Effect": "Deny",
+                            "Action": [
+                                "iam:AttachRolePolicy",
+                                "iam:AttachGroupPolicy",
+                                "iam:AttachUserPolicy"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "ArnEquals": {
+                                    "iam:PolicyARN": "arn:aws:iam::*:policy/*Full*"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "DenyAttachAdminPolicyToUserAndGroup",
+                            "Effect": "Deny",
+                            "Action": [
+                                "iam:AttachRolePolicy",
+                                "iam:AttachGroupPolicy",
+                                "iam:AttachUserPolicy"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "ArnEquals": {
+                                    "iam:PolicyARN": "arn:aws:iam::*:policy/*Admin*"
+                                }
+                            }
+                        }
+                    ]
+                },
+                "Roles": [
+                    {
+                        "Ref": "WorkmatesCrossAccountL2SupportRole"
+                    }
+                ]
+            }
+        },
+        "WmCrossAccountL1SupportPolicySSO": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "WML1SupportPolicy",
+                "PolicyDocument": {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:CopySnapshot",
+                "rds:StartDBCluster",
+                "lightsail:CreateRelationalDatabaseSnapshot",
+                "ec2:AuthorizeSecurityGroupIngress",
+                "ec2:CreateImage",
+                "ec2:CopyImage",
+                "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
+                "lightsail:GetInstanceAccessDetails",
+                "workspaces:DescribeAccountModifications",
+                "ec2:StartInstances",
+                "ec2:RevokeSecurityGroupEgress",
+                "lightsail:OpenInstancePublicPorts",
+                "workspaces:CreateIpGroup",
+                "workspaces:RebootWorkspaces",
+                "workspaces:ModifyAccount",
+                "workspaces:DescribeWorkspaces",
+                "workspaces:UpdateRulesOfIpGroup",
+                "sns:*",
+                "events:*",
+                "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
+                "workspaces:RebuildWorkspaces",
+                "rds:StopDBCluster",
+                "workspaces:AssociateIpGroups",
+                "workspaces:DescribeAccount",
+                "workspaces:AuthorizeIpRules",
+                "ec2:CreateTags",
+                "ec2:ModifyNetworkInterfaceAttribute",
+                "workspaces:CreateWorkspaces",
+                "lightsail:ExportSnapshot",
+                "lightsail:StopRelationalDatabase",
+                "ec2:StopInstances",
+                "rds:StartDBInstance",
+                "ec2:RevokeSecurityGroupIngress",
+                "lightsail:PutInstancePublicPorts",
+                "workspaces:CreateTags",
+                "rds:CreateDBSnapshot",
+                "cloudwatch:*",
+                "ec2:CreateSnapshots",
+                "lightsail:StopInstance",
+                "workspaces:DescribeIpGroups",
+                "rds:ModifyDBSnapshotAttribute",
+                "ec2:DeleteTags",
+                "workspaces:DescribeWorkspaceImages",
+                "workspaces:ListAvailableManagementCidrRanges",
+                "lightsail:RebootRelationalDatabase",
+                "ec2:ModifyImageAttribute",
+                "lightsail:CreateInstanceSnapshot",
+                "workspaces:StopWorkspaces",
+                "lightsail:PeerVpc",
+                "lightsail:StartInstance",
+                "workspaces:DescribeWorkspacesConnectionStatus",
+                "ec2:CreateSecurityGroup",
+                "ec2:CreateSnapshot",
+                "workspaces:StartWorkspaces",
+                "ec2:ModifyInstanceAttribute",
+                "workspaces:DescribeWorkspaceDirectories",
+                "ec2:RebootInstances",
+                "rds:AddTagsToResource",
+                "ec2:AuthorizeSecurityGroupEgress",
+                "workspaces:ModifyWorkspaceProperties",
+                "rds:CopyDBSnapshot",
+                "workspaces:ImportWorkspaceImage",
+                "rds:CopyDBClusterSnapshot",
+                "workspaces:DescribeWorkspaceBundles",
+                "rds:StopDBInstance",
+                "lightsail:CopySnapshot",
+                "lightsail:StartRelationalDatabase",
+                "workspaces:DescribeClientProperties",
+                "rds:ModifyDBSnapshot",
+                "rds:RebootDBInstance",
+                "workspaces:DescribeTags",
+                "workspaces:ModifyClientProperties",
+                "lightsail:RebootInstance",
+                "workspaces:ModifyWorkspaceState",
+                "aws-portal:*Billing",
+                "aws-portal:*Usage",
+                "aws-portal:*PaymentMethods",
+                "budgets:ViewBudget",
+                "budgets:ModifyBudget",
+                "ce:UpdatePreferences",
+                "ce:CreateReport",
+                "ce:UpdateReport",
+                "ce:DeleteReport",
+                "ce:CreateNotificationSubscription",
+                "ce:UpdateNotificationSubscription",
+                "ce:DeleteNotificationSubscription",
+                "cur:DescribeReportDefinitions",
+                "cur:PutReportDefinition",
+                "cur:ModifyReportDefinition",
+                "cur:DeleteReportDefinition",
+                "purchase-orders:*PurchaseOrders"
+            ],
+            "Resource": "*"
+        }
+    ]
+},
+                "Roles": [
+                    {
+                        "Ref": "WorkmatesCrossAccountL1SupportRole"
+                    }
+                ]
+            }
+        }
+    }
+}

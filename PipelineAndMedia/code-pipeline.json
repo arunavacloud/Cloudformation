@@ -1,0 +1,304 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Parameters": {
+    "BitbucketRepo": {
+      "Type": "String",
+      "Default": "moolcash/api_core"
+    },
+    "BitbucketBranch": {
+      "Type": "String",
+      "Default": "dev-ecs"
+    },
+    "DevCluster": {
+      "Type": "String"
+    },
+    "DevService": {
+      "Type": "String"
+    },
+    "ECRRepository": {
+      "Type": "String"
+    },
+    "s3ENV":{
+      "Type":"String"
+    }
+  },
+  "Resources": {
+    "CodeBuildServiceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Path": "/",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "codebuild.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Resource": "*",
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                    "ecr:GetAuthorizationToken",
+                    "codestar-connections:*"
+                  ]
+                },
+                {
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:s3:::${ArtifactBucket}/*"
+                  },
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:GetObjectVersion"
+                  ]
+                },
+                {
+                  "Resource": { "Ref": "ECRRepository" },
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage",
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:PutImage",
+                    "ecr:InitiateLayerUpload",
+                    "ecr:UploadLayerPart",
+                    "ecr:CompleteLayerUpload"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "CodePipelineServiceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Path": "/",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "codepipeline.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:s3:::${ArtifactBucket}/*"
+                    },
+                    { "Ref": "s3ENV" }
+                  ],
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:PutObject",
+                    "s3:GetObject",
+                    "s3:GetObjectVersion",
+                    "s3:GetBucketVersioning"
+                  ]
+                },
+                {
+                  "Resource": "*",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecs:DescribeServices",
+                    "ecs:DescribeTaskDefinition",
+                    "ecs:DescribeTasks",
+                    "ecs:ListTasks",
+                    "ecs:RegisterTaskDefinition",
+                    "ecs:UpdateService",
+                    "codebuild:StartBuild",
+                    "codebuild:BatchGetBuilds",
+                    "iam:PassRole",
+                    "codestar-connections:*",
+                    "kms:*"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ArtifactBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain"
+    },
+    "CodeBuildProject": {
+      "Type": "AWS::CodeBuild::Project",
+      "Properties": {
+        "Artifacts": {
+          "Type": "CODEPIPELINE"
+        },
+        "Source": {
+          "Type": "CODEPIPELINE",
+          "BuildSpec": "version: 0.2\nphases:\n  pre_build:\n    commands:\n      - $(aws ecr get-login --no-include-email)\n      - TAG=\"$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | head -c 8)\"\n      - IMAGE_URI=\"${REPOSITORY_URI}:${TAG}\"\n  build:\n    commands:\n      - docker build --tag \"$IMAGE_URI\" .\n  post_build:\n    commands:\n      - docker push \"$IMAGE_URI\"\n      - printf '[{\"name\":\"townhall-app\",\"imageUri\":\"%s\"}]' \"$IMAGE_URI\" > images.json\nartifacts:\n  files: images.json\n"
+        },
+        "Environment": {
+          "ComputeType": "BUILD_GENERAL1_SMALL",
+          "Image": "aws/codebuild/standard:3.0",
+          "PrivilegedMode": true,
+          "Type": "LINUX_CONTAINER",
+          "EnvironmentVariables": [
+            {
+              "Name": "AWS_DEFAULT_REGION",
+              "Value": {
+                "Ref": "AWS::Region"
+              }
+            },
+            {
+              "Name": "REPOSITORY_URI",
+              "Value": { "Ref": "ECRRepository" }
+            }
+          ]
+        },
+        "Name": {
+          "Ref": "AWS::StackName"
+        },
+        "ServiceRole": {
+          "Ref": "CodeBuildServiceRole"
+        }
+      }
+    },
+    "Pipeline": {
+      "Type": "AWS::CodePipeline::Pipeline",
+      "Properties": {
+        "RoleArn": {
+          "Fn::GetAtt": [
+            "CodePipelineServiceRole",
+            "Arn"
+          ]
+        },
+        "ArtifactStore": {
+          "Type": "S3",
+          "Location": {
+            "Ref": "ArtifactBucket"
+          }
+        },
+        "Stages": [
+          {
+            "Name": "Source",
+            "Actions": [
+              {
+                "Name": "App",
+                "ActionTypeId": {
+                  "Category": "Source",
+                  "Owner": "AWS",
+                  "Version": 1,
+                  "Provider": "CodeStarSourceConnection"
+                },
+                "Configuration": {
+                  "ConnectionArn": "arn:aws:codestar-connections:us-east-2:461511511035:connection/3edafa52-d93e-427f-a742-e96d22e1a99d",
+                  "FullRepositoryId": {
+                    "Ref": "BitbucketRepo"
+                  },
+                  "BranchName": {
+                    "Ref": "BitbucketBranch"
+                  }
+                },
+                "OutputArtifacts": [
+                  {
+                    "Name": "App"
+                  }
+                ],
+                "RunOrder": 1
+              }
+            ]
+          },
+          {
+            "Name": "Build",
+            "Actions": [
+              {
+                "Name": "Build",
+                "ActionTypeId": {
+                  "Category": "Build",
+                  "Owner": "AWS",
+                  "Version": 1,
+                  "Provider": "CodeBuild"
+                },
+                "Configuration": {
+                  "ProjectName": {
+                    "Ref": "CodeBuildProject"
+                  }
+                },
+                "InputArtifacts": [
+                  {
+                    "Name": "App"
+                  }
+                ],
+                "OutputArtifacts": [
+                  {
+                    "Name": "BuildOutput"
+                  }
+                ],
+                "RunOrder": 1
+              }
+            ]
+          },
+          {
+            "Name": "Deploy",
+            "Actions": [
+              {
+                "Name": "Deploy",
+                "ActionTypeId": {
+                  "Category": "Deploy",
+                  "Owner": "AWS",
+                  "Version": 1,
+                  "Provider": "ECS"
+                },
+                "Configuration": {
+                  "ClusterName": {
+                    "Ref": "DevCluster"
+                  },
+                  "ServiceName": {
+                    "Ref": "DevService"
+                  },
+                  "FileName": "images.json"
+                },
+                "InputArtifacts": [
+                  {
+                    "Name": "BuildOutput"
+                  }
+                ],
+                "RunOrder": 1
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "PipelineUrl": {
+      "Value": {
+        "Fn::Sub": "https://console.aws.amazon.com/codepipeline/home?region=${AWS::Region}#/view/${Pipeline}"
+      }
+    }
+  }
+}
