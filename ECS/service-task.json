@@ -1,0 +1,239 @@
+{
+    "Description": "This template create ECS Cluster TaskDefinition with TG.\n",
+    "Parameters": {
+      "EnvironmentName": {
+          "Description": "Provide environment name",
+          "Type": "String"
+      },
+      "TGname": {
+          "Description": "Provide Target Group Name",
+          "Type": "String"
+      },
+      "ServiceName": {
+          "Description": "Provide ECS Service Name",
+          "Type": "String"
+      },
+        "VPC": {
+            "Description": "The VPC that the ECS cluster is deployed to",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "Cluster": {
+            "Description": "Please provide the ECS Cluster Amazon Resource Name (ARN).",
+            "Type": "String"
+        },
+        "DesiredCount": {
+            "Description": "How many instances of this task should we run across our cluster?",
+            "Type": "Number",
+            "Default": 2
+        },
+        "Listener": {
+            "Description": "The Application Load Balancer listener to register with",
+            "Type": "String"
+        },
+        "Path": {
+            "Description": "The path to register with the Application Load Balancer",
+            "Type": "String",
+            "Default": "/"
+        },
+        "ContainerImage": {
+            "Description": "Provide Container Image Path",
+            "Type": "String",
+            "Default": "1234567890.dkr.ecr.us-east-1.amazonaws.com/ecs-refarch-cloudformation/product-service:1.0.0"
+        },
+        "S3Environment": {
+            "Description": "Provide S3 ARN",
+            "Type": "String",
+            "Default": "arn:aws:s3:::townhall-env-ecs/townhall-dev.env"
+        },
+        "ExecutionRoleArn": {
+            "Description": "Provide Role ARN",
+            "Type": "String",
+            "Default": "arn:aws:iam::1234567890:role/ecs-task-role-defination"
+        },
+        "TaskRoleArn": {
+            "Description": "Provide Role ARN",
+            "Type": "String",
+            "Default": "arn:aws:iam::1234567890:role/ecs-task-role-defination"
+        }
+    },
+    "Resources": {
+        "Service": {
+            "Type": "AWS::ECS::Service",
+            "DependsOn": "ListenerRule",
+            "Properties": {
+                "ServiceName": { "Ref": "ServiceName" },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": { "Ref": "ServiceName" }
+                    }
+                ],
+                "Cluster": {
+                    "Ref": "Cluster"
+                },
+                "Role": {
+                    "Ref": "ServiceRole"
+                },
+                "DesiredCount": {
+                    "Ref": "DesiredCount"
+                },
+                "TaskDefinition": {
+                    "Ref": "TaskDefinition"
+                },
+                "LoadBalancers": [
+                    {
+                        "ContainerName": {
+                            "Fn::Sub": "${EnvironmentName}-Container"
+                        },
+                        "ContainerPort": 8000,
+                        "TargetGroupArn": {
+                            "Ref": "TargetGroup"
+                        }
+                    }
+                ]
+            }
+        },
+        "TaskDefinition": {
+            "Type": "AWS::ECS::TaskDefinition",
+            "Properties": {
+                "Family": { "Ref": "ServiceName" },
+                "ContainerDefinitions": [
+                    {
+                        "Name": {
+                            "Fn::Sub": "${EnvironmentName}-Container"
+                        },
+                        "Essential": true,
+                        "Image": {
+                            "Ref": "ContainerImage"
+                        },
+                        "Memory": 512,
+                        "PortMappings": [
+                            {
+                                "ContainerPort": 8000
+                            }
+                        ],
+                        "EnvironmentFiles": [
+                            {
+                                "Value": {
+                                    "Ref": "S3Environment"
+                                },
+                                "Type": "s3"
+                            }
+                        ],
+                        "LogConfiguration": {
+                            "LogDriver": "awslogs",
+                            "Options": {
+                                "awslogs-group": {
+                                    "Ref": "CloudWatchLogsGroup"
+                                },
+                                "awslogs-region": {
+                                    "Ref": "AWS::Region"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "ExecutionRoleArn": {
+                    "Ref": "ExecutionRoleArn"
+                },
+                "TaskRoleArn": {
+                    "Ref": "TaskRoleArn"
+                }
+            }
+        },
+        "CloudWatchLogsGroup": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+                "LogGroupName": {
+                    "Ref": "AWS::StackName"
+                },
+                "RetentionInDays": 365
+            }
+        },
+        "TargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "Name": {
+                    "Fn::Sub": "${TGname}-TG"
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Port": 80,
+                "Protocol": "HTTP",
+                "Matcher": {
+                    "HttpCode": "200-299"
+                },
+                "HealthCheckIntervalSeconds": 10,
+                "HealthCheckPath": "/",
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 5,
+                "HealthyThresholdCount": 2
+            }
+        },
+        "ListenerRule": {
+            "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+            "Properties": {
+                "ListenerArn": {
+                    "Ref": "Listener"
+                },
+                "Priority": 2,
+                "Conditions": [
+                    {
+                        "Field": "path-pattern",
+                        "Values": [
+                            {
+                                "Ref": "Path"
+                            }
+                        ]
+                    }
+                ],
+                "Actions": [
+                    {
+                        "TargetGroupArn": {
+                            "Ref": "TargetGroup"
+                        },
+                        "Type": "forward"
+                    }
+                ]
+            }
+        },
+        "ServiceRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Fn::Sub": "ecs-service-${AWS::StackName}"
+                },
+                "Path": "/",
+                "AssumeRolePolicyDocument": "{\n    \"Statement\": [{\n        \"Effect\": \"Allow\",\n        \"Principal\": { \"Service\": [ \"ecs.amazonaws.com\" ]},\n        \"Action\": [ \"sts:AssumeRole\" ]\n    }]\n}\n",
+                "Policies": [
+                    {
+                        "PolicyName": {
+                            "Fn::Sub": "ecs-service-${AWS::StackName}"
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:AuthorizeSecurityGroupIngress",
+                                        "ec2:Describe*",
+                                        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                                        "elasticloadbalancing:Describe*",
+                                        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                                        "elasticloadbalancing:DeregisterTargets",
+                                        "elasticloadbalancing:DescribeTargetGroups",
+                                        "elasticloadbalancing:DescribeTargetHealth",
+                                        "elasticloadbalancing:RegisterTargets"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    }
+}

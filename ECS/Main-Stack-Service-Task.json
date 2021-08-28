@@ -1,0 +1,224 @@
+{
+  "Description": "This template deploys a highly available ECS cluster using an AutoScaling Group, with  ECS hosts distributed across multiple Availability Zones.  Finally, it deploys a pair of ECS services from containers published in Amazon EC2 Container Registry (Amazon ECR).",
+  "Parameters": {
+    "EnvironmentName": {
+      "Description": "An environment name that will be prefixed to resource names",
+      "Type": "String",
+      "Default": "Workmates-Project"
+    },
+    "TGname": {
+      "Description": "An environment name that will be prefixed to resource names",
+      "Type": "String",
+      "Default": "Client-Prod",
+      "MinLength": "1",
+      "MaxLength": "18"
+    },
+    "Path": {
+      "Type": "String",
+      "Default": "/"
+    },
+    "VPC": {
+      "Type": "AWS::EC2::VPC::Id",
+      "Description": "Choose which VPC the Application Load Balancer should be deployed to",
+      "Default": ""
+    },
+    "Cluster": {
+      "Description": "Please provide the ECS Cluster Amazon Resource Name (ARN)",
+      "Type": "String",
+      "Default": ""
+    },
+    "LBSubnets": {
+      "Description": "Choose which subnets the Application Load Balancer should be deployed to",
+      "Type": "String",
+      "Default": ""
+    },
+    "ContainerImage": {
+      "Description": "Provide Container Image Path",
+      "Type": "String",
+      "Default": "275396840892.dkr.ecr.us-east-1.amazonaws.com/ecs-refarch-cloudformation/product-service:1.0.0"
+    },
+    "S3Environment": {
+      "Description": "Provide S3 ARN",
+      "Type": "String",
+      "Default": "arn:aws:s3:::demo-env-ecs/demo-dev.env"
+    },
+    "ExecutionRoleArn": {
+      "Description": "Provide Role ARN",
+      "Type": "String",
+      "Default": "arn:aws:iam::1234567890:role/ecs-task-role-defination"
+    },
+    "TaskRoleArn": {
+      "Description": "Provide Role ARN",
+      "Type": "String",
+      "Default": "arn:aws:iam::1234567890:role/ecs-task-role-defination"
+    },
+    "VPCCidr": {
+      "Description": "Provide VPC Cidr IP Ex: 10.0.0.0/16",
+      "Type": "String",
+      "Default": ""
+    },
+    "ServiceName": {
+      "Description": "Provide ECS Service Name ",
+      "Type": "String",
+      "Default": ""
+    }
+  },
+  "Resources": {
+    "SecurityGroups": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": "https://wm-cloudformation-templates.s3.ap-south-1.amazonaws.com/CFN-Template/Master-Stack/ECS/security-groups.json",
+        "TimeoutInMinutes": "60",
+        "Parameters": {
+          "EnvironmentName": {
+            "Ref": "EnvironmentName"
+          },
+          "VPC": {
+            "Ref": "VPC"
+          },
+          "VPCCidr": {
+            "Ref": "VPCCidr"
+          }
+        }
+      }
+    },
+    "ALB": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": "https://wm-cloudformation-templates.s3.ap-south-1.amazonaws.com/CFN-Template/Master-Stack/ECS/load-balancers.json",
+        "TimeoutInMinutes": "60",
+        "Parameters": {
+          "EnvironmentName": {
+            "Ref": "EnvironmentName"
+          },
+          "TGname": {
+            "Ref": "TGname"
+          },
+          "VPC": {
+            "Ref": "VPC"
+          },
+          "Subnets": {
+            "Ref": "LBSubnets"
+          },
+          "SecurityGroup": {
+            "Fn::GetAtt": [
+              "SecurityGroups",
+              "Outputs.LoadBalancerSecurityGroup"
+            ]
+          }
+        }
+      }
+    },
+    "ECSServices": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": "https://wm-cloudformation-templates.s3.ap-south-1.amazonaws.com/CFN-Template/Master-Stack/ECS/service_task_V1.yaml",
+        "TimeoutInMinutes": "60",
+        "Parameters": {
+          "EnvironmentName": {
+            "Ref": "EnvironmentName"
+          },
+          "TGname": {
+            "Ref": "TGname"
+          },
+          "ServiceName": {
+            "Ref": "ServiceName"
+          },
+          "ContainerImage": {
+            "Ref": "ContainerImage"
+          },
+          "VPC": {
+            "Ref": "VPC"
+          },
+          "Path": "/",
+          "Cluster": {
+            "Ref": "Cluster"
+          },
+          "S3Environment": {
+            "Ref": "S3Environment"
+          },
+          "ExecutionRoleArn": {
+            "Ref": "ExecutionRoleArn"
+          },
+          "TaskRoleArn": {
+            "Ref": "TaskRoleArn"
+          },
+          "DesiredCount": 1,
+          "Listener": {
+            "Fn::GetAtt": [
+              "ALB",
+              "Outputs.Listener"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Global Configuration"
+          },
+          "Parameters": [
+            "EnvironmentName",
+            "TGname",
+            "VPC",
+            "LBSubnets",
+            "VPCCidr"
+          ]
+        },
+        {
+          "Label": {
+            "default": "ECS Service Configuration"
+          },
+          "Parameters": [
+            "ServiceName",
+            "Cluster"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Task Defination Configuration"
+          },
+          "Parameters": [
+            "ContainerImage",
+            "S3Environment",
+            "ExecutionRoleArn",
+            "TaskRoleArn"
+          ]
+        }
+      ],
+      "ParameterLabels": {
+        "EnvironmentName": {
+          "default": "Environment Name"
+        },
+        "LBSubnets": {
+          "default": "Load Balancer Subnet"
+        },
+        "VPCCidr": {
+          "default": "Cidr Of VPC"
+        },
+        "ServiceName": {
+          "default": "ECS Service Name"
+        },
+        "TGname": {
+          "default": "Target Group Name"
+        },
+        "EC2LatestAmiId": {
+          "default": "EC2 Latest AMI"
+        },
+        "EC2InstanceType": {
+          "default": "EC2 Instance Type"
+        },
+        "EC2InstanceName": {
+          "default": "SUB Domain Name"
+        },
+        "DBIndentityName": {
+          "default": "DB identifier"
+        }
+      }
+    }
+  }
+}
