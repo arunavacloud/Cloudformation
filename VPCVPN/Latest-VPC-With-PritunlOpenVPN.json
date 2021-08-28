@@ -1,0 +1,268 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "This template will be used for creating custom VPC with Pritunl Open VPN",
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Global Configuration"
+          },
+          "Parameters": [
+            "ClientName"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Network Configuration"
+          },
+          "Parameters": [
+            "NumberOfAZs",
+            "PrivateSubnets",
+            "natif"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Public VPC Configuration"
+          },
+          "Parameters": [
+            "vpcCidr",
+            "PublicSubnet1aCidr",
+            "PublicSubnet1bCidr",
+            "PublicSubnet1cCidr"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Private VPC Configuration"
+          },
+          "Parameters": [
+            "PrivateSubnet1aCidr",
+            "PrivateSubnet1bCidr",
+            "PrivateSubnet1cCidr"
+          ]
+        },
+        {
+          "Label": {
+            "default": "EC2 Configuration"
+          },
+          "Parameters": [
+            "SSHKeyName",
+            "ClientIPCIDR"
+
+          ]
+        }
+      ],
+      "ParameterLabels": {
+        "NumberOfAZs": {
+          "default": "Availability Zone"
+        },
+        "PrivateSubnets": {
+          "default": "Private Subnet"
+        },
+        "natif": {
+          "default": "NAT Gateway"
+        },
+        "vpcCidr": {
+          "default": "VPC"
+        },
+        "PublicSubnet1aCidr": {
+          "default": "Public CIDR 1A"
+        },
+        "PublicSubnet1bCidr": {
+          "default": "Public CIDR 1B"
+        },
+        "PublicSubnet1cCidr": {
+          "default": "Public CIDR 1C"
+        },
+        "PrivateSubnet1aCidr": {
+          "default": "Private CIDR 1A"
+        },
+        "PrivateSubnet1bCidr": {
+          "default": "Private CIDR 1B"
+        },
+        "PrivateSubnet1cCidr": {
+          "default": "Private CIDR 1C"
+        },
+        "ClientName": {
+          "default": "Client Name"
+        },
+        "SSHKeyName": {
+          "default": "OpenVPN Key Pair"
+        }
+      }
+    }
+  },
+  "Parameters": {
+    "ClientName": {
+      "Description": "Enter Client name.",
+      "Type": "String",
+      "Default": "Workmates"
+    },
+    "natif": {
+      "Description": "Do you need NAT.",
+      "Default": "No",
+      "Type": "String",
+      "AllowedValues": [
+        "No",
+        "Yes"
+      ],
+      "ConstraintDescription": "Choose the Yes and No option."
+    },
+    "PrivateSubnets": {
+      "Type": "String",
+      "AllowedValues": [
+        true,
+        false
+      ],
+      "Default": true,
+      "Description": "Do you want to create private subnets in addition to public subnets?"
+    },
+    "NumberOfAZs": {
+      "Type": "Number",
+      "AllowedValues": [
+        1,
+        2,
+        3
+      ],
+      "Default": 2,
+      "Description": "How many Availability Zones do you wish to utilize?"
+    },
+    "vpcCidr": {
+      "Description": "Enter your Custom VPC CIDR block.",
+      "Type": "String",
+      "Default": "10.1.0.0/16",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PublicSubnet1aCidr": {
+      "Description": "Enter your Custom Public Subnet 1a CIDR block.",
+      "Type": "String",
+      "Default": "10.1.10.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PrivateSubnet1aCidr": {
+      "Description": "Enter your Custom Private Subnet 1a CIDR block.",
+      "Type": "String",
+      "Default": "10.1.50.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PublicSubnet1bCidr": {
+      "Description": "Enter your Custom Public Subnet 1b CIDR block.",
+      "Type": "String",
+      "Default": "10.1.20.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PrivateSubnet1bCidr": {
+      "Description": "Enter your Custom Private Subnet 1b CIDR block.",
+      "Type": "String",
+      "Default": "10.1.60.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PublicSubnet1cCidr": {
+      "Description": "Enter your Custom Public Subnet 1b CIDR block.",
+      "Type": "String",
+      "Default": "10.1.30.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PrivateSubnet1cCidr": {
+      "Description": "Enter your Custom Private Subnet 1b CIDR block.",
+      "Type": "String",
+      "Default": "10.1.70.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "SSHKeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "SSH Key for the OpenVPN Instance",
+      "ConstraintDescription": "Must be the name of an existing EC2 KeyPair."
+    },
+    "ClientIPCIDR": {
+      "Type": "String",
+      "Default": "0.0.0.0/0",
+      "Description": "CIDR IP to be granted access by the SG, use 0.0.0.0/0 to accept all IPs"
+    }
+  },
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": "https://wm-cloudformation-templates.s3.ap-south-1.amazonaws.com/CFN-Template/Latest-VPC-Final.json",
+        "TimeoutInMinutes": "60",
+        "Parameters": {
+          "ClientName": {
+            "Ref": "ClientName"
+          },
+          "PrivateSubnets": {
+            "Ref": "PrivateSubnets"
+          },
+          "NumberOfAZs": {
+            "Ref": "NumberOfAZs"
+          },
+          "natif": {
+            "Ref": "natif"
+          },
+          "vpcCidr": {
+            "Ref": "vpcCidr"
+          },
+          "PublicSubnet1aCidr": {
+            "Ref": "PublicSubnet1aCidr"
+          },
+          "PrivateSubnet1aCidr": {
+            "Ref": "PrivateSubnet1aCidr"
+          },
+          "PublicSubnet1bCidr": {
+            "Ref": "PublicSubnet1bCidr"
+          },
+          "PrivateSubnet1bCidr": {
+            "Ref": "PrivateSubnet1bCidr"
+          },
+          "PublicSubnet1cCidr": {
+            "Ref": "PublicSubnet1cCidr"
+          },
+          "PrivateSubnet1cCidr": {
+            "Ref": "PrivateSubnet1cCidr"
+          }
+        }
+      }
+    },
+    "OpenVPN": {
+      "DependsOn": [
+        "VPC"
+      ],
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": "https://wm-cloudformation-templates.s3.ap-south-1.amazonaws.com/CFN-Template/Master-Stack/Workmates-Pritunl1.0.json",
+        "TimeoutInMinutes": "60",
+        "Parameters": {
+          "ClientName": {
+            "Ref": "ClientName"
+          },
+          "VPC": {
+            "Fn::GetAtt": [
+              "VPC",
+              "Outputs.VPC"
+            ]
+          },
+          "Subnets": {
+            "Fn::GetAtt": [
+              "VPC",
+              "Outputs.PublicSubnetA"
+            ]
+          },
+          "SSHKeyName": {
+            "Ref": "SSHKeyName"
+          },
+          "ClientIPCIDR":{"Ref": "ClientIPCIDR"}
+
+        }
+      }
+    }
+  }
+}
