@@ -1,0 +1,299 @@
+{
+  "Description": "Create a variable number of EC2 instance resources.",
+  "Parameters": {
+    "SecurityGroup": {
+      "Description": "Instances Security Group",
+      "Type": "AWS::EC2::SecurityGroup::Id"
+    },
+    "Project": {
+      "Description": "Image ID to launch EC2 instances.",
+      "Type": "String",
+      "Default": "Project Client Name"
+    },
+    "AppName": {
+      "Description": "Image ID to launch EC2 instances.",
+      "Type": "String",
+      "Default": "Project Client Name"
+    },
+    "Env": {
+      "Description": "Instance type to launch EC2 instances.",
+      "Type": "String",
+      "Default": "Prod",
+      "AllowedValues": [
+        "Prod",
+        "Dev",
+        "Staging"
+      ]
+    },
+    "InstanceCount1A": {
+      "Description": "Number of EC2 instances (must be between 1 and 5).",
+      "Type": "Number",
+      "Default": 1,
+      "MinValue": 1,
+      "MaxValue": 20,
+      "ConstraintDescription": "Must be a number between 1 and 10."
+    },
+    "InstanceCount1B": {
+      "Description": "Number of EC2 instances (must be between 1 and 5).",
+      "Type": "Number",
+      "Default": 1,
+      "MinValue": 1,
+      "MaxValue": 20,
+      "ConstraintDescription": "Must be a number between 1 and 10."
+    },
+    "InstanceCount1C": {
+      "Description": "Number of EC2 instances (must be between 1 and 5).",
+      "Type": "Number",
+      "Default": 1,
+      "MinValue": 1,
+      "MaxValue": 20,
+      "ConstraintDescription": "Must be a number between 1 and 10."
+    },
+    "ImageId": {
+      "Description": "Image ID to launch EC2 instances.",
+      "Type": "AWS::EC2::Image::Id",
+      "Default": "ami-d783a9b8"
+    },
+    "InstanceType": {
+      "Description": "Instance type to launch EC2 instances.",
+      "Type": "String",
+      "Default": "t3.medium",
+      "AllowedValues": [
+        "t3.nano",
+        "t3.micro",
+        "t3.small",
+        "t3.medium",
+        "t3.large",
+        "t3.xlarge",
+        "t3.2xlarge",
+        "m5.large",
+        "m5.xlarge",
+        "m5.2xlarge",
+        "m5.4xlarge",
+        "c5.large",
+        "c5.xlarge",
+        "c5.2xlarge",
+        "c5.4xlarge",
+        "r5.large",
+        "r5.xlarge",
+        "r5.2xlarge",
+        "r5.4xlarge"
+      ]
+    },
+    "Subnet": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud."
+    },
+    "Subnet1B": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud."
+    },
+    "Subnet1C": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud."
+    },
+    "VPC": {
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "KeyName": {
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    }
+  },
+  "Resources": {
+    "EC2Instances1A": {
+      "Type": "Custom::EC2Instances1A",
+      "Properties": {
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "EC2InstancesFunction",
+            "Arn"
+          ]
+        },
+        "ImageId": {
+          "Ref": "ImageId"
+        },
+        "SecurityGroupIds": [
+          {
+            "Ref": "SecurityGroup"
+          }
+        ],
+        "SubnetId": {
+          "Ref": "Subnet"
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "MinCount": 1,
+        "MaxCount": {
+          "Ref": "InstanceCount1A"
+        }
+      }
+    },
+    "EC2Instances1B": {
+      "Type": "Custom::EC2Instances1B",
+      "Properties": {
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "EC2InstancesFunction",
+            "Arn"
+          ]
+        },
+        "ImageId": {
+          "Ref": "ImageId"
+        },
+        "SecurityGroupIds": [
+          {
+            "Ref": "SecurityGroup"
+          }
+        ],
+        "SubnetId": {
+          "Ref": "Subnet1B"
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "MinCount": 1,
+        "MaxCount": {
+          "Ref": "InstanceCount1B"
+        }
+      }
+    },
+    "EC2Instances1C": {
+      "Type": "Custom::EC2Instances1C",
+      "Properties": {
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "EC2InstancesFunction",
+            "Arn"
+          ]
+        },
+        "ImageId": {
+          "Ref": "ImageId"
+        },
+        "SecurityGroupIds": [
+          {
+            "Ref": "SecurityGroup"
+          }
+        ],
+        "SubnetId": {
+          "Ref": "Subnet1C"
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "MinCount": 1,
+        "MaxCount": {
+          "Ref": "InstanceCount1C"
+        }
+      }
+    },
+    "EC2InstancesFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "LambdaExecutionRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "ZipFile": {
+            "Fn::Sub": "var response = require('cfn-response');\nvar AWS = require('aws-sdk');\nexports.handler = function(event, context) {\n  var physicalId = event.PhysicalResourceId || 'none';\n  function success(data) {\n    return response.send(event, context, response.SUCCESS, data, physicalId);\n  }\n  function failed(e) {\n    return response.send(event, context, response.FAILED, e, physicalId);\n  }\n  var ec2 = new AWS.EC2();\n  var instances;\n  if (event.RequestType == 'Create') {\n    var launchParams = event.ResourceProperties;\n    delete launchParams.ServiceToken;\n    ec2.runInstances(launchParams).promise().then((data)=> {\n      instances = data.Instances.map((data)=> data.InstanceId);\n      physicalId = instances.join(':');\n      return ec2.waitFor('instanceRunning', {InstanceIds: instances}).promise();\n    }).then((data)=> success({Instances: instances})\n    ).catch((e)=> failed(e));\n  } else if (event.RequestType == 'Delete') {\n    if (physicalId == 'none') {return success({});}\n    var deleteParams = {InstanceIds: physicalId.split(':')};\n    ec2.terminateInstances(deleteParams).promise().then((data)=>\n      ec2.waitFor('instanceTerminated', deleteParams).promise()\n    ).then((data)=>success({})\n    ).catch((e)=>failed(e));\n  } else {\n    return failed({Error: \"In-place updates not supported.\"});\n  }\n};\n"
+          }
+        },
+        "Runtime": "nodejs12.x",
+        "Timeout": 300
+      }
+    },
+    "LambdaExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "EC2Policy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ec2:RunInstances",
+                    "ec2:DescribeInstances",
+                    "ec2:DescribeInstanceStatus",
+                    "ec2:TerminateInstances"
+                  ],
+                  "Resource": [
+                    "*"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "Instances1A": {
+      "Value": {
+        "Fn::Join": [
+          "",
+          {
+            "Fn::GetAtt": [
+              "EC2Instances1A",
+              "Instances"
+            ]
+          }
+        ]
+      }
+    },
+    "Instances1B": {
+      "Value": {
+        "Fn::Join": [
+          ",",
+          {
+            "Fn::GetAtt": [
+              "EC2Instances1B",
+              "Instances"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

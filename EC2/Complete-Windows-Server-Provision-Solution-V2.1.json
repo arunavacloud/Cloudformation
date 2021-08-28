@@ -1,0 +1,641 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "This template will provision windows & openVPN server with custom VPC also setup cloudwatch",
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Global Configuration"
+          },
+          "Parameters": [
+            "ClientName"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Network Configuration"
+          },
+          "Parameters": [
+            "NumberOfAZs",
+            "PrivateSubnets",
+            "natif"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Public VPC Configuration"
+          },
+          "Parameters": [
+            "vpcCidr",
+            "PublicSubnet1aCidr",
+            "PublicSubnet1bCidr",
+            "PublicSubnet1cCidr"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Private VPC Configuration"
+          },
+          "Parameters": [
+            "PrivateSubnet1aCidr",
+            "PrivateSubnet1bCidr",
+            "PrivateSubnet1cCidr"
+          ]
+        },
+        {
+          "Label": {
+            "default": "OpenVPN Configuration"
+          },
+          "Parameters": [
+            "Country",
+            "Province",
+            "City",
+            "Organization",
+            "Email",
+            "OrganizationUnit",
+            "ClientIPCIDR",
+            "SSHKeyName"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Windows Server Configuration"
+          },
+          "Parameters": [
+            "AdditionalDrive",
+            "UserPass",
+            "RootVolumeSize",
+            "UserVolumeSize",
+            "WindowsServerVersion",
+            "InstanceType",
+            "SourceCidrForRDP",
+            "KeyPairAppDB",
+            "Project",
+            "Env",
+            "Layer"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Cloud Watch Configuration"
+          },
+          "Parameters": [
+            "namealarmcpu",
+            "volume",
+            "EmailId"
+          ]
+        }
+      ],
+      "ParameterLabels": {
+        "namealarmcpu": {
+          "default": "Alarm Name"
+        },
+        "EmailId": {
+          "default": "Email ID"
+        },
+        "volume": {
+          "default": "Disk Name"
+        },
+        "NumberOfAZs": {
+          "default": "Availability Zone"
+        },
+        "PrivateSubnets": {
+          "default": "Private Subnet"
+        },
+        "natif": {
+          "default": "NAT Gateway"
+        },
+        "vpcCidr": {
+          "default": "VPC"
+        },
+        "PublicSubnet1aCidr": {
+          "default": "Public CIDR 1A"
+        },
+        "PublicSubnet1bCidr": {
+          "default": "Public CIDR 1B"
+        },
+        "PublicSubnet1cCidr": {
+          "default": "Public CIDR 1C"
+        },
+        "PrivateSubnet1aCidr": {
+          "default": "Private CIDR 1A"
+        },
+        "PrivateSubnet1bCidr": {
+          "default": "Private CIDR 1B"
+        },
+        "PrivateSubnet1cCidr": {
+          "default": "Private CIDR 1C"
+        },
+        "ClientName": {
+          "default": "Client Name"
+        },
+        "SSHKeyName": {
+          "default": "OpenVPN Key Pair"
+        },
+        "AdditionalDrive": {
+          "default": "Additional Drive"
+        },
+        "UserPass": {
+          "default": "Additional Users Creation Password"
+        },
+        "RootVolumeSize": {
+          "default": "Root Volume Size"
+        },
+        "UserVolumeSize": {
+          "default": "User Volume Size"
+        },
+        "WindowsServerVersion": {
+          "default": "Windows Server Version"
+        },
+        "InstanceType": {
+          "default": "Instance Type"
+        },
+        "SourceCidrForRDP": {
+          "default": "Cidr For RDP"
+        },
+        "KeyPairAppDB": {
+          "default": "Key Pair"
+        }
+      }
+    }
+  },
+  "Parameters": {
+    "ClientName": {
+      "Description": "Enter Client name.",
+      "Type": "String",
+      "Default": "Workmates"
+    },
+    "PrivateSubnets": {
+      "Type": "String",
+      "AllowedValues": [
+        true,
+        false
+      ],
+      "Default": true,
+      "Description": "Do you want to create private subnets in addition to public subnets?"
+    },
+    "NumberOfAZs": {
+      "Type": "Number",
+      "AllowedValues": [
+        1,
+        2,
+        3
+      ],
+      "Default": 2,
+      "Description": "How many Availability Zones do you wish to utilize?"
+    },
+    "vpcCidr": {
+      "Description": "Enter your Custom VPC CIDR block.",
+      "Type": "String",
+      "Default": "10.1.0.0/16",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PublicSubnet1aCidr": {
+      "Description": "Enter your Custom Public Subnet 1a CIDR block.",
+      "Type": "String",
+      "Default": "10.1.10.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PrivateSubnet1aCidr": {
+      "Description": "Enter your Custom Private Subnet 1a CIDR block.",
+      "Type": "String",
+      "Default": "10.1.50.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PublicSubnet1bCidr": {
+      "Description": "Enter your Custom Public Subnet 1b CIDR block.",
+      "Type": "String",
+      "Default": "10.1.20.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PrivateSubnet1bCidr": {
+      "Description": "Enter your Custom Private Subnet 1b CIDR block.",
+      "Type": "String",
+      "Default": "10.1.60.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PublicSubnet1cCidr": {
+      "Description": "Enter your Custom Public Subnet 1b CIDR block.",
+      "Type": "String",
+      "Default": "10.1.30.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "PrivateSubnet1cCidr": {
+      "Description": "Enter your Custom Private Subnet 1b CIDR block.",
+      "Type": "String",
+      "Default": "10.1.70.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "Country": {
+      "Type": "String",
+      "MinLength": "2",
+      "MaxLength": "2",
+      "AllowedPattern": "[A-Z]+",
+      "ConstraintDescription": "Must Be country initial example:IN all capital letters"
+    },
+    "Province": {
+      "Type": "String",
+      "AllowedPattern": "[A-Za-z]+",
+      "ConstraintDescription": "No Spaces or special charecter allow in Province"
+    },
+    "City": {
+      "Type": "String",
+      "AllowedPattern": "[A-Za-z]+",
+      "ConstraintDescription": "No Spaces or special charecter allow in City"
+    },
+    "Organization": {
+      "Type": "String",
+      "AllowedPattern": "[A-Za-z-]+",
+      "ConstraintDescription": "only '-' allow between words in Organization "
+    },
+    "Email": {
+      "Type": "String",
+      "AllowedPattern": "^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$",
+      "ConstraintDescription": "Must be enter valid email address"
+    },
+    "OrganizationUnit": {
+      "Type": "String",
+      "AllowedPattern": "[A-Z]+",
+      "Description": "Must Be all cap letters in Organization"
+    },
+    "SSHKeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "SSH Key for the OpenVPN Instance",
+      "ConstraintDescription": "Must be the name of an existing EC2 KeyPair."
+    },
+    "ClientIPCIDR": {
+      "Type": "String",
+      "Default": "0.0.0.0/0",
+      "Description": "CIDR IP to be granted access by the SG, use 0.0.0.0/0 to accept all IPs"
+    },
+    "AdditionalDrive": {
+      "Type": "String",
+      "AllowedValues": [
+        true,
+        false
+      ],
+      "Default": false,
+      "Description": "Do you want to create addition partition"
+    },
+    "UserPass": {
+      "Description": "Enter User Password. Default : P@ssword1",
+      "NoEcho": "true",
+      "Type": "String",
+      "Default": "P@ssword1"
+    },
+    "RootVolumeSize": {
+      "Description": "Input Root Volume Size",
+      "Type": "Number",
+      "Default": "30"
+    },
+    "UserVolumeSize": {
+      "Description": "Input User Volume Size",
+      "Type": "Number",
+      "Default": "30"
+    },
+    "WindowsServerVersion": {
+      "Description": "Select Windows Version as per requirement",
+      "Type": "String",
+      "Default": "Windows_Server-2019-English-Full-Base",
+      "AllowedValues": [
+        "Windows_Server-2019-English-Full-Base",
+        "Windows_Server-2016-English-Full-Base",
+        "Windows_Server-2012-R2_RTM-English-64Bit-Base"
+      ]
+    },
+    "InstanceType": {
+      "Description": "Amazon EC2 instance type",
+      "Type": "String",
+      "Default": "t3.small",
+      "AllowedValues": [
+        "t3.micro",
+        "t3.small",
+        "t3.medium",
+        "t3.large",
+        "t3.xlarge",
+        "t3.2xlarge",
+        "c5.large",
+        "c5.xlarge",
+        "c5.2xlarge",
+        "c5.4xlarge",
+        "c5.9xlarge",
+        "c5.12xlarge",
+        "m5.large",
+        "m5.xlarge",
+        "m5.2xlarge",
+        "m5.4xlarge",
+        "m5.8xlarge",
+        "m5.12xlarge"
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+    },
+    "SourceCidrForRDP": {
+      "Description": "IP Cidr from which you are likely to RDP into the instances. You can add rules later by modifying the created security groups e.g. 54.32.98.160/32",
+      "Default": "0.0.0.0/0",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "AllowedPattern": "^([0-9]+\\.){3}[0-9]+\\/[0-9]+$"
+    },
+    "KeyPairAppDB": {
+      "Description": "Name of an existing Application and DB KeyPair to enable SSH access",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    },
+    "Env": {
+      "Description": "Enter Env Name Defalut: Prod",
+      "Type": "String",
+      "Default": "Prod"
+    },
+    "Project": {
+      "Description": "Enter Project Name",
+      "Type": "String"
+    },
+    "Layer": {
+      "Description": "Enter Layer Name Defalut: APP-and-DB",
+      "Type": "String",
+      "Default": "APP-and-DB"
+    },
+    "volume": {
+      "Description": "Provide disk's/folder's name (ex.: C:)",
+      "Type": "String",
+      "Default": "C:",
+      "AllowedValues": [
+        "C:",
+        "D:",
+        "E:",
+        "F:"
+      ]
+    },
+    "namealarmcpu": {
+      "Description": "Please enter the Alarm name as WorkMates-Prod-Web",
+      "Type": "String",
+      "Default": "WorkMates-Prod-Web"
+    },
+    "EmailId": {
+      "Description": "Please enter the email ID for subscription ex. xyz@gmail.com",
+      "Type": "String",
+      "Default": "info@cloudworkmates.com"
+    }
+  },
+  "Conditions": {
+    "AdditionalDrive": {
+      "Fn::Equals": [
+        {
+          "Ref": "AdditionalDrive"
+        },
+        true
+      ]
+    },
+    "AdditionalDriveNo": {
+      "Fn::Equals": [
+        {
+          "Ref": "AdditionalDrive"
+        },
+        false
+      ]
+    }
+  },
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": "https://wm-cloudformation-templates.s3.ap-south-1.amazonaws.com/CFN-Template/Master-Stack/Latest-VPC-Final.json",
+        "TimeoutInMinutes": "60",
+        "Parameters": {
+          "ClientName": {
+            "Ref": "ClientName"
+          },
+          "PrivateSubnets": {
+            "Ref": "PrivateSubnets"
+          },
+          "NumberOfAZs": {
+            "Ref": "NumberOfAZs"
+          },
+          "vpcCidr": {
+            "Ref": "vpcCidr"
+          },
+          "PublicSubnet1aCidr": {
+            "Ref": "PublicSubnet1aCidr"
+          },
+          "PrivateSubnet1aCidr": {
+            "Ref": "PrivateSubnet1aCidr"
+          },
+          "PublicSubnet1bCidr": {
+            "Ref": "PublicSubnet1bCidr"
+          },
+          "PrivateSubnet1bCidr": {
+            "Ref": "PrivateSubnet1bCidr"
+          },
+          "PublicSubnet1cCidr": {
+            "Ref": "PublicSubnet1cCidr"
+          },
+          "PrivateSubnet1cCidr": {
+            "Ref": "PrivateSubnet1cCidr"
+          },
+		      "natif": "Yes"
+
+        }
+      }
+    },
+    "OpenVPN": {
+      "DependsOn": [
+        "VPC"
+      ],
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": "https://wm-cloudformation-templates.s3.ap-south-1.amazonaws.com/CFN-Template/Master-Stack/openvpn-final-V1.2.7.json",
+        "TimeoutInMinutes": "60",
+        "Parameters": {
+          "ClientName": {
+            "Ref": "ClientName"
+          },
+          "Country": {
+            "Ref": "Country"
+          },
+          "Province": {
+            "Ref": "Province"
+          },
+          "City": {
+            "Ref": "City"
+          },
+          "Organization": {
+            "Ref": "Organization"
+          },
+          "Email": {
+            "Ref": "Email"
+          },
+          "OrganizationUnit": {
+            "Ref": "OrganizationUnit"
+          },
+          "ClientIPCIDR": {
+            "Ref": "ClientIPCIDR"
+          },
+          "SSHKeyName": {
+            "Ref": "SSHKeyName"
+          },
+          "VPC": {
+            "Fn::GetAtt": [
+              "VPC",
+              "Outputs.VPC"
+            ]
+          },
+          "Subnets": {
+            "Fn::GetAtt": [
+              "VPC",
+              "Outputs.PublicSubnetA"
+            ]
+          }
+        }
+      }
+    },
+    "WindowsProvision": {
+      "DependsOn": [
+        "VPC",
+        "OpenVPN"
+      ],
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": "https://wm-cloudformation-templates.s3.ap-south-1.amazonaws.com/CFN-Template/Master-Stack/Latest-Windows-Server-Provision-V-1.3.json",
+        "TimeoutInMinutes": "60",
+        "Parameters": {
+          "EC2InstanceName": {
+            "Ref": "ClientName"
+          },
+          "AdditionalDrive": {
+            "Ref": "AdditionalDrive"
+          },
+          "UserPass": {
+            "Ref": "UserPass"
+          },
+          "PrivateSubnet": {
+            "Fn::GetAtt": [
+              "VPC",
+              "Outputs.PrivateSubnetANAT"
+            ]
+          },
+          "VPC": {
+            "Fn::GetAtt": [
+              "VPC",
+              "Outputs.VPC"
+            ]
+          },
+          "RootVolumeSize": {
+            "Ref": "RootVolumeSize"
+          },
+          "UserVolumeSize": {
+            "Ref": "UserVolumeSize"
+          },
+          "OpenVPNIP": {
+            "Fn::GetAtt": [
+              "OpenVPN",
+              "Outputs.myEIPOut"
+            ]
+          },
+          "WindowsServerVersion": { "Fn::Sub": "/aws/service/ami-windows-latest/${WindowsServerVersion}"},
+          "InstanceType": {
+            "Ref": "InstanceType"
+          },
+          "KeyPairAppDB": {
+            "Ref": "KeyPairAppDB"
+          },
+          "Env": {
+            "Ref": "Env"
+          },
+          "Project": {
+            "Ref": "Project"
+          },
+          "Layer": {
+            "Ref": "Layer"
+          }
+        }
+      }
+    },
+    "CloudWatch": {
+      "Condition": "AdditionalDriveNo",
+      "DependsOn": [
+        "VPC",
+        "OpenVPN",
+        "WindowsProvision"
+      ],
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": "https://wm-cloudformation-templates.s3.ap-south-1.amazonaws.com/CFN-Template/Latest-Cloud-Watch-V1-Windows-Nested.json",
+        "TimeoutInMinutes": "60",
+        "Parameters": {
+          "volume": {
+            "Ref": "volume"
+          },
+          "namealarmcpu": {
+            "Ref": "namealarmcpu"
+          },
+          "Webserver1": {
+            "Fn::GetAtt": [
+              "WindowsProvision",
+              "Outputs.InstanceIdNo"
+            ]
+          },
+          "ImageId": {
+            "Fn::GetAtt": [
+              "WindowsProvision",
+              "Outputs.ImageId"
+            ]
+          },
+          "InstanceType": {
+            "Fn::GetAtt": [
+              "WindowsProvision",
+              "Outputs.InstanceType"
+            ]
+          }
+        }
+      }
+    },
+    "CloudWatch1": {
+      "Condition": "AdditionalDrive",
+      "DependsOn": [
+        "VPC",
+        "OpenVPN",
+        "WindowsProvision"
+      ],
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": "https://wm-cloudformation-templates.s3.ap-south-1.amazonaws.com/CFN-Template/Latest-Cloud-Watch-V1-Windows-Nested.json",
+        "TimeoutInMinutes": "60",
+        "Parameters": {
+          "volume": {
+            "Ref": "volume"
+          },
+          "namealarmcpu": {
+            "Ref": "namealarmcpu"
+          },
+          "Webserver1": {
+            "Fn::GetAtt": [
+              "WindowsProvision",
+              "Outputs.InstanceId"
+            ]
+          },
+          "ImageId": {
+            "Fn::GetAtt": [
+              "WindowsProvision",
+              "Outputs.ImageId"
+            ]
+          },
+          "InstanceType": {
+            "Fn::GetAtt": [
+              "WindowsProvision",
+              "Outputs.InstanceType"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

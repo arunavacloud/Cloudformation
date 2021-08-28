@@ -1,0 +1,347 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "This template setup LEMP Server",
+  "Parameters": {
+    "ENV": {
+      "Description": "Select environment",
+      "Type": "String",
+      "AllowedValues": [
+        "Dev",
+        "Staging",
+        "Prod"
+      ],
+      "Default": "Dev"
+    },
+    "VolumeSize": {
+      "Description": "Enter Required Volume",
+      "Type": "Number",
+      "Default": 10
+    },
+    "MYSQLVolumeSize": {
+      "Description": "Enter Required Volume",
+      "Type": "Number",
+      "Default": 10
+    },
+    "AZ": {
+      "Description": "Select AZ selected",
+      "Type": "String",
+      "AllowedValues": [
+        "1a",
+        "1b",
+        "1c",
+        "2a",
+        "2b",
+        "2c",
+        "3a",
+        "3b",
+        "3c"
+      ]
+    },
+    "Subnet": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud."
+    },
+    "VPC": {
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "KeyName": {
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    },
+    "MysqlKeyName": {
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    },
+    "Ec2Instance": {
+      "Description": "Client name",
+      "Type": "String"
+    },
+    "InstanceType": {
+      "Description": "WebServer EC2 instance type",
+      "Type": "String",
+      "Default": "t3a.small",
+      "AllowedValues": [
+        "t3a.nano",
+        "t3a.micro",
+        "t3a.small",
+        "t3a.medium",
+        "t3a.large",
+        "t3a.xlarge",
+        "t3a.2xlarge",
+        "t3.nano",
+        "t3.micro",
+        "t3.small",
+        "t3.medium",
+        "t3.large",
+        "t3.xlarge",
+        "t3.2xlarge",
+        "m5.large",
+        "m5.xlarge",
+        "m5.2xlarge",
+        "m5.4xlarge",
+        "c5.large",
+        "c5.xlarge",
+        "c5.2xlarge",
+        "c5.4xlarge",
+        "r5.large",
+        "r5.xlarge",
+        "r5.2xlarge",
+        "r5.4xlarge"
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+    },
+    "VPCCidr": {
+      "Type": "String",
+      "Default": "10.1.0.0/16",
+      "Description": "CIDR IP to be granted access by the SG, use 0.0.0.0/0 to accept all IPs"
+    },
+    "ImageId": {
+      "Description": "Input latest UbuntuImage",
+      "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+      "Default": "20.04",
+      "AllowedValues": [
+        "20.04",
+        "18.04"
+      ]
+    }
+  },
+
+  "Resources": {
+    "WebServerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable HTTP & HTTPS access via port 80 & 443",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "443",
+            "ToPort": "443",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "2223",
+            "ToPort": "2223",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Fn::Sub": "${Ec2Instance}-WebServer-${ENV}-SG"
+                  }
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "MYSqlServerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable MYSQL port access via port 3306",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "3306",
+            "ToPort": "3306",
+            "CidrIp": {
+              "Ref": "VPCCidr"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "2223",
+            "ToPort": "2223",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Fn::Sub": "${Ec2Instance}-MYSQL-${ENV}-SG"
+                  }
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "WebServer": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": {"Fn::Sub":"/aws/service/canonical/ubuntu/server/${ImageId}/stable/current/amd64/hvm/ebs-gp2/ami-id"},
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${Ec2Instance}-WebServer-${ENV}-${AZ}"
+            }
+          },
+          {
+            "Key": "Env",
+            "Value": {
+              "Ref": "ENV"
+            }
+          },
+          {
+            "Key": "Layer",
+            "Value": "Web"
+          },
+          {
+            "Key": "ImplementedBy",
+            "Value": "Workmates"
+          }
+        ],
+        "SecurityGroupIds": [
+          {
+            "Ref": "WebServerSecurityGroup"
+          }
+        ],
+        "SubnetId": {
+          "Ref": "Subnet"
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        }
+      }
+    },
+    "MySQLServer": {
+      "Type": "AWS::EC2::Instance",
+
+      "Properties": {
+        "ImageId": {"Fn::Sub":"/aws/service/canonical/ubuntu/server/${ImageId}/stable/current/amd64/hvm/ebs-gp2/ami-id"},
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${Ec2Instance}-MYSQLServer-${ENV}-${AZ}"
+            }
+          },
+          {
+            "Key": "Env",
+            "Value": {
+              "Ref": "ENV"
+            }
+          },
+          {
+            "Key": "Layer",
+            "Value": "DB"
+          },
+          {
+            "Key": "ImplementedBy",
+            "Value": "Workmates"
+          }
+        ],
+        "SecurityGroupIds": [
+          {
+            "Ref": "MYSqlServerSecurityGroup"
+          }
+        ],
+        "SubnetId": {
+          "Ref": "Subnet"
+        },
+        "KeyName": {
+          "Ref": "MysqlKeyName"
+        }
+
+      }
+
+    }
+  },
+  "Outputs": {
+    "MYSQL": {
+      "Description": "Get MYSQL root password",
+      "Value": {
+        "Fn::Sub": "sudo grep 'temporary password' /var/log/mysqld.log"
+      }
+    }
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Server Configuration"
+          },
+          "Parameters": [
+            "Ec2Instance",
+            "MysqlKeyName",
+            "KeyName",
+            "InstanceType",
+            "VolumeSize",
+            "MYSQLVolumeSize",
+            "ENV"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Network Configuration"
+          },
+          "Parameters": [
+            "VPC",
+            "Subnet",
+            "AZ",
+            "VPCCidr"
+          ]
+        }
+      ],
+      "ParameterLabels": {
+        "Ec2Instance": {
+          "default": "Client Name"
+        },
+        "KeyName": {
+          "default": "WebServer KeyPair"
+        },
+        "MysqlKeyName": {
+          "default": "MYSQL Server KeyPair"
+        },
+        "AZ": {
+          "default": "AZ Tag"
+        },
+        "VPCCidr": {
+          "default": "VPC CIDR"
+        }
+      }
+    }
+  }
+}

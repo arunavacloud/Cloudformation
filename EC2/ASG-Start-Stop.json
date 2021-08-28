@@ -1,0 +1,193 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "This Template scheduled start/stop of EC2 instances managed by Auto Scaling Groups",
+    "Parameters": {
+  "NAMES": {
+      "Description": "Enter Auto Scaling Groups you want to manage with this function",
+      "Type": "String",
+      "Default": "Workmates-ASG"
+  },
+  "MINSIZE": {
+      "Description": "Enter Minimum size of the Auto Scaling Group(s) when EC2 instances are started",
+      "Type": "Number",
+      "Default": "1"
+  },
+  "MAXSIZE": {
+      "Description": "Enter Maximum size of the Auto Scaling Group(s) when EC2 instances are started",
+      "Type": "Number",
+      "Default": "1"
+  },
+  "DESIREDCAPACITY": {
+      "Description": "Enter Desired capacity of the Auto Scaling Group(s) when EC2 instances are started",
+      "Type": "Number",
+      "Default": "1"
+  }
+},
+  "Resources": {
+    "LambdaFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "LambdaFunctionPolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ec2:CopySnapshot",
+                    "ec2:DeregisterImage",
+                    "ec2:DeleteSnapshot",
+                    "ec2:DeleteTags",
+                    "ec2:CreateTags",
+                    "ec2:ResetSnapshotAttribute",
+                    "ec2:CreateImage",
+                    "ec2:CopyImage",
+                    "ec2:StopInstances",
+                    "logs:CreateLogGroup",
+                    "logs:PutLogEvents",
+                    "logs:CreateLogStream",
+                    "ec2:Describe*",
+                    "ec2:StartInstances",
+                    "ec2:CreateSnapshots",
+                    "ec2:CreateSnapshot",
+                    "sns:publish",
+                    "autoscaling:*"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "LambdaFunctionASG": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "ASGEC2Instance",
+        "Runtime": "python3.6",
+        "Timeout": 900,
+        "Handler": "index.lambda_handler",
+        "Environment": {
+          "Variables": {
+              "NAMES": { "Ref": "NAMES" },
+              "MIN_SIZE": { "Ref": "MINSIZE" },
+              "MAX_SIZE":{ "Ref": "MAXSIZE" },
+              "DESIRED_CAPACITY":{ "Ref": "DESIREDCAPACITY" }
+                }
+                },
+        "Role": {
+          "Fn::GetAtt": [
+            "LambdaFunctionRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "",
+              [
+                "import os\r\nimport boto3\r\n\r\nclient = boto3.client('autoscaling')\r\n\r\ndef get_env_variable(var_name):\r\n    msg = \"Set the %s environment variable\"\r\n    try:\r\n        return os.environ[var_name]\r\n    except KeyError:\r\n        error_msg = msg % var_name\r\n\r\ndef lambda_handler(event, context):\r\n    auto_scaling_groups = get_env_variable('NAMES').split()\r\n\r\n    for group in auto_scaling_groups:\r\n        if servers_need_to_be_started(group):\r\n            action = \"Starting\"\r\n            min_size = int(get_env_variable('MIN_SIZE'))\r\n            max_size = int(get_env_variable('MAX_SIZE'))\r\n            desired_capacity = int(get_env_variable('DESIRED_CAPACITY'))\r\n        else:\r\n            action = \"Stopping\"\r\n            min_size = 0\r\n            max_size = 0\r\n            desired_capacity = 0\r\n\r\n        #print action + \": \" + group\r\n        response = client.update_auto_scaling_group(\r\n            AutoScalingGroupName=group,\r\n            MinSize=min_size,\r\n            MaxSize=max_size,\r\n            DesiredCapacity=desired_capacity,\r\n        )\r\n\r\n        print(response)\r\n\r\ndef servers_need_to_be_started(group_name):\r\n    min_group_size = get_current_min_group_size(group_name)\r\n    if min_group_size == 0:\r\n        return True\r\n    else:\r\n        return False\r\n    \r\n\r\ndef get_current_min_group_size(group_name):\r\n    response = client.describe_auto_scaling_groups(\r\n        AutoScalingGroupNames=[ group_name ],\r\n    )\r\n    return response[\"AutoScalingGroups\"][0][\"MinSize\"]"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "RuleASGStart": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Name" :"WM-ASGInstanceStart-Rule",
+        "ScheduleExpression": "cron(30 04 ? * MON-SUN *)",
+        "State":"DISABLED",
+        "Targets": [
+          {
+            "Id": "ASGInstanceStart",
+            "Arn": {
+              "Fn::GetAtt": [
+                "LambdaFunctionASG",
+                "Arn"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "InvokeLambdaPermissionStart": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "LambdaFunctionASG",
+            "Arn"
+          ]
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "RuleASGStart",
+            "Arn"
+          ]
+        }
+      }
+    },
+    "RuleASGStop": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Name" :"WM-ASGInstanceStop-Rule",
+        "ScheduleExpression": "cron(30 13 ? * MON-SUN *)",
+        "State":"DISABLED",
+        "Targets": [
+          {
+            "Id": "EC2InstanceStop",
+            "Arn": {
+              "Fn::GetAtt": [
+                "LambdaFunctionASG",
+                "Arn"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "InvokeLambdaPermissionStop": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "LambdaFunctionASG",
+            "Arn"
+          ]
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "RuleASGStop",
+            "Arn"
+          ]
+        }
+      }
+    }
+  }
+}

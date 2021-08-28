@@ -1,0 +1,609 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Create pritunl openvpn resources Stack by Workmates",
+  "Parameters": {
+    "ClientName": {
+      "Type": "String",
+      "Description": "Please enter client name here"
+    },
+    "VPC": {
+      "Type": "AWS::EC2::VPC::Id",
+      "Description": "VpcId of your existing Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be the VPC Id of an existing Virtual Private Cloud."
+    },
+    "Subnets": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a select existing subnets associated . They should be residing in the selected Virtual Private Cloud."
+    },
+    "SSHKeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "SSH Key for the OpenVPN Instance",
+      "ConstraintDescription": "Must be the name of an existing EC2 KeyPair."
+    },
+    "ClientIPCIDR": {
+      "Type": "String",
+      "Default": "0.0.0.0/0",
+      "Description": "CIDR IP to be granted access by the SG, use 0.0.0.0/0 to accept all IPs"
+    },
+	  "PritunlPort": {
+      "Type": "String",
+      "Default": "13219",
+      "Description": "Enter Custom Port to use for Pritunl OpenVPN"
+    },
+	"InstanceType": {
+      "Description": "Amazon EC2 instance type",
+      "Type": "String",
+      "Default": "t3a.micro",
+      "AllowedValues": [
+        "t3.micro",
+        "t3.small",
+        "t3.medium",
+		    "t3a.micro",
+        "t3a.small",
+        "t3a.medium"
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+	}
+
+  },
+  "Mappings": {
+    "RegionMap": {
+      "us-east-1": {
+        "AMAZONLINUXAMI": "ami-b70554c8"
+      },
+      "us-east-2": {
+        "AMAZONLINUXAMI": "ami-8c122be9"
+      },
+      "us-west-1": {
+        "AMAZONLINUXAMI": "ami-e0ba5c83"
+      },
+      "us-west-2": {
+        "AMAZONLINUXAMI": "ami-a9d09ed1"
+      },
+      "ca-central-1": {
+        "AMAZONLINUXAMI": "ami-0ee86a6a"
+      },
+      "eu-west-1": {
+        "AMAZONLINUXAMI": "ami-466768ac"
+      },
+      "eu-central-1": {
+        "AMAZONLINUXAMI": "ami-7c4f7097"
+      },
+      "eu-west-2": {
+        "AMAZONLINUXAMI": "ami-b8b45ddf"
+      },
+      "ap-southeast-1": {
+        "AMAZONLINUXAMI": "ami-05868579"
+      },
+      "ap-southeast-2": {
+        "AMAZONLINUXAMI": "ami-39f8215b"
+      },
+      "ap-northeast-2": {
+        "AMAZONLINUXAMI": "ami-afd86dc1"
+      },
+      "ap-northeast-1": {
+        "AMAZONLINUXAMI": "ami-e99f4896"
+      },
+      "ap-south-1": {
+        "AMAZONLINUXAMI": "ami-d783a9b8"
+      },
+      "sa-east-1": {
+        "AMAZONLINUXAMI": "ami-6dca9001"
+      }
+    }
+  },
+  "Resources": {
+    "myEIP": {
+      "Type": "AWS::EC2::EIP",
+      "Properties": {
+        "Domain": "vpc"
+      }
+    },
+    "AssociateManagementAccessPort": {
+      "Type": "AWS::EC2::EIPAssociation",
+      "Properties": {
+        "AllocationId": {
+          "Fn::GetAtt": [
+            "myEIP",
+            "AllocationId"
+          ]
+        },
+        "NetworkInterfaceId": {
+          "Ref": "myNetworkInterface"
+        }
+      }
+    },
+    "OpenVPNInstanceSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "SG for OpenVPN Server",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "udp",
+            "FromPort": 1194,
+            "ToPort": 1194,
+            "CidrIp": {
+              "Ref": "ClientIPCIDR"
+            }
+          },
+		  {
+            "IpProtocol": "udp",
+            "FromPort": {
+              "Ref": "PritunlPort"
+            },
+            "ToPort": {
+              "Ref": "PritunlPort"
+            },
+            "CidrIp": {
+              "Ref": "ClientIPCIDR"
+           }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "15.206.48.168/32",
+            "Description": "WorkmatesCore2cloud-Prod-VPN-1a"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "CidrIp": "15.206.48.168/32",
+            "Description": "WorkmatesCore2cloud-Prod-VPN-1a"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "15.206.48.168/32",
+            "Description": "WorkmatesCore2cloud-Prod-VPN-1a"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "10.3.1.105/32",
+            "Description": "WorkmatesCore2cloud-Prod-VPN-1a"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "10.3.1.105/32",
+            "Description": "WorkmatesCore2cloud-Prod-VPN-1a"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "CidrIp": "10.3.1.105/32",
+            "Description": "WorkmatesCore2cloud-Prod-VPN-1a"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "ClientName"
+                  },
+                  "OpenVPN-SG"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "myEC2InstanceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/"
+      }
+    },
+    "myAccessPolicy": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyName": "myAccessPolicy",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ListBucket",
+                "s3:GetBucketLocation"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:aws:s3:::${myS3Bucket}"
+              }
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "ec2:DescribeInstances",
+                "ec2:CreateTags",
+                "ec2:DescribeVolumes",
+                "ec2:DescribeInstanceTypes",
+                "ec2:RunInstances",
+                "ec2:DescribeInstanceStatus"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:PutObject",
+                "s3:PutObjectAcl",
+                "s3:GetObject",
+                "s3:GetObjectAcl",
+                "s3:DeleteObject"
+              ],
+              "Resource":[
+
+                    {
+                     "Fn::Sub": "arn:aws:s3:::${myS3Bucket}/*"
+                   }
+                  ]
+
+
+
+            }
+          ]
+        },
+        "Roles": [
+          {
+            "Ref": "myEC2InstanceRole"
+          }
+        ]
+      }
+    },
+    "ec2InstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          {
+            "Ref": "myEC2InstanceRole"
+          }
+        ]
+      }
+    },
+    "myNetworkInterface": {
+      "Type": "AWS::EC2::NetworkInterface",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "Subnets"
+        },
+        "Description": "OpenVPN Server Interface",
+        "GroupSet": [
+          {
+            "Ref": "OpenVPNInstanceSG"
+          }
+        ],
+        "SourceDestCheck": false,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "ClientName"
+                  },
+                  "Prod-OpenVPN"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "myS3Bucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "AccessControl": "Private"
+      }
+    },
+    "EC2OpenVPNInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "DisableApiTermination": true,
+        "ImageId": {
+          "Fn::FindInMap": [
+            "RegionMap",
+            {
+              "Ref": "AWS::Region"
+            },
+            "AMAZONLINUXAMI"
+          ]
+        },
+        "BlockDeviceMappings" : [
+                 {
+                    "DeviceName" : "/dev/xvda",
+                    "Ebs" : {
+                      "VolumeType" : "gp3",
+                      "DeleteOnTermination" : "true",
+                      "VolumeSize" : "10"
+                    }
+                  }
+              ],
+        "InstanceType": {"Ref":"InstanceType"},
+        "KeyName": {
+          "Ref": "SSHKeyName"
+        },
+        "NetworkInterfaces": [
+          {
+            "NetworkInterfaceId": {
+              "Ref": "myNetworkInterface"
+            },
+            "DeviceIndex": 0
+          }
+        ],
+        "IamInstanceProfile": {
+          "Ref": "ec2InstanceProfile"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "ClientName"
+                  },
+                  "Prod-OpenVPN"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Managedby",
+            "Value": "Workmates"
+          },
+          {
+            "Key": "Implementedby",
+            "Value": "Workmates"
+          },
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ClientName"
+            }
+          },
+          {
+            "Key": "Env",
+            "Value": "Prod OpenVPN"
+          },
+          {
+            "Key": "Layer",
+            "Value": "APP"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Sub": "#!/bin/bash\nyum update -y aws-cfn-bootstrap\n/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EC2OpenVPNInstance --configsets myCfnConfigSet --region ${AWS::Region}\nyum -y update\n/opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2OpenVPNInstance --region ${AWS::Region}\nEC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)\nEC2_AVAIL_ZONE=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)\nVOLUME_ID=$(aws ec2 describe-volumes --filters Name=attachment.instance-id,Values=$EC2_INSTANCE_ID Name=attachment.device,Values=/dev/xvda --query 'Volumes[*].[VolumeId]' --region ${AWS::Region} --out text | cut -f 1)\naws ec2 create-tags --resources $VOLUME_ID --tags Key=Name,Value=${ClientName}-Prod-OpenVPN --region ${AWS::Region}"
+
+          }
+        }
+      },
+      "CreationPolicy": {
+        "ResourceSignal": {
+          "Count": "1",
+          "Timeout": "PT30M"
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "configSets": {
+            "myCfnConfigSet": [
+              "configure_cfn",
+              "install_software",
+              "run",
+              "password",
+              "upload_files",
+              "clear_files"
+            ]
+          },
+          "configure_cfn": {
+            "files": {
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                "content": {
+                  "Fn::Sub": "[cfn-auto-reloader-hook]\ntriggers=post.update\npath=Resources.EC2OpenVPNInstance.Metadata.AWS::CloudFormation::Init\naction=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EC2OpenVPNInstance --configsets myCfnConfigSet --region ${AWS::Region}\n"
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              },
+              "/etc/cfn/cfn-hup.conf": {
+                "content": {
+                  "Fn::Sub": "[main]\nstack=${AWS::StackId}\nregion=${AWS::Region}\nverbose=true\ninterval=1\n"
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              }
+            },
+            "services": {
+              "sysvinit": {
+                "cfn-hup": {
+                  "enabled": "true",
+                  "ensureRunning": "true",
+                  "files": [
+                    "/etc/cfn/cfn-hup.conf",
+                    "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+                  ]
+                }
+              }
+            }
+          },
+          "install_software": {
+            "files": {
+              "/tmp/install.sh": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "sudo tee /etc/yum.repos.d/mongodb-org-4.4.repo << EOF\n",
+                      "[mongodb-org-4.4]\n",
+                      "name=MongoDB Repository\n",
+                      "baseurl=https://repo.mongodb.org/yum/amazon/2/mongodb-org/4.4/x86_64/\n",
+                      "gpgcheck=1\n",
+                      "enabled=1\n",
+                      "gpgkey=https://www.mongodb.org/static/pgp/server-4.4.asc\n",
+                      "EOF\n",
+                      "sudo tee /etc/yum.repos.d/pritunl.repo << EOF\n",
+                      "[pritunl]\n",
+                      "name=Pritunl Repository\n",
+                      "baseurl=https://repo.pritunl.com/stable/yum/amazonlinux/2/\n",
+                      "gpgcheck=1\n",
+                      "enabled=1\n",
+                      "EOF\n",
+                      "sudo rpm -Uvh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm\n",
+                      "gpg --keyserver hkp://keyserver.ubuntu.com --recv-keys 7568D9BB55FF9E5287D586017AE645C0CF8E292A\n",
+                      "gpg --armor --export 7568D9BB55FF9E5287D586017AE645C0CF8E292A > key.tmp; sudo rpm --import key.tmp; rm -f key.tmp\n",
+                      "sudo yum -y install pritunl mongodb-org\n",
+                      "sudo systemctl start mongod pritunl\n",
+                      "sudo systemctl enable mongod pritunl\n",
+                      "sudo systemctl start mongod\n",
+                      "export MONGO_PASSWORD=$(< /dev/urandom tr -dc _A-Za-z0-9 | head -c${1:-32})\n",
+                      "echo -e 'use admin; \ndb.createUser({user: \"admin\", pwd: \"'$MONGO_PASSWORD'\", roles: [ \"userAdminAnyDatabase\", \"dbAdminAnyDatabase\", \"readWriteAnyDatabase\"]});' | tee | mongo\n",
+                      "echo -e '\nsecurity:\n  authorization: enabled\n' | sudo tee -a /etc/mongod.conf\n",
+                      "sudo systemctl restart mongod\n",
+                      "sudo pritunl set-mongodb \"mongodb://admin:$MONGO_PASSWORD@localhost:27017/pritunl?authSource=admin\""
+                    ]
+                  ]
+                },
+                "mode": "000777",
+                "owner": "root",
+                "group": "root"
+              }
+            }
+          },
+          "run": {
+            "commands": {
+              "01_runtmp": {
+                "command": "sh install.sh",
+                "cwd": "/tmp/"
+              },
+              "02_start_pritunl": {
+                "command": "sudo systemctl start pritunl"
+              },
+              "03_enable_pritunl_mongod": {
+                "command": "sudo systemctl enable pritunl mongod"
+              },
+              "04_restart_pritunl": {
+                "command": "sudo systemctl restart pritunl"
+              },
+              "05_reload_daemon": {
+                "command": "sudo systemctl daemon-reload"
+              }
+            }
+          },
+          "password": {
+            "commands": {
+              "01_getpassword": {
+                "command": "sudo pritunl default-password > /var/Password.txt"
+              }
+            }
+          },
+          "upload_files": {
+            "commands": {
+              "01_upload_files": {
+                "cwd": "/var",
+                "command": {
+                  "Fn::Sub": "aws s3 cp Password.txt s3://${myS3Bucket}/client/Password.txt\n"
+                }
+              }
+            }
+          },
+          "clear_files": {
+            "commands": {
+              "01_clean_certificate": {
+                "command": "sudo rm -rf /tmp/install*"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "myS3BucketOut": {
+      "Description": "S3 bucket name",
+      "Value": {
+        "Fn::Sub": "https://s3.console.aws.amazon.com/s3/buckets/${myS3Bucket}?region=${AWS::Region}&tab=objects"
+      }
+    },
+    "myEIPOut": {
+      "Description": "Instance EIP",
+      "Value": {
+        "Ref": "myEIP"
+      }
+    }
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "EC2 Configuration"
+          },
+          "Parameters": [
+            "ClientName",
+            "InstanceType",
+            "SSHKeyName"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Network Configuration"
+          },
+          "Parameters": [
+            "VPC",
+            "Subnets",
+            "PritunlPort",
+            "ClientIPCIDR"
+          ]
+        }
+      ],
+      "ParameterLabels": {
+        "ClientName": {
+          "default": "Client Name"
+        },
+        "SSHKeyName": {
+          "default": "Existing Key Pair"
+        },
+        "ClientIPCIDR": {
+          "default": "Provide CIDR"
+        }
+      }
+    }
+  }
+}

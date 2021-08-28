@@ -1,0 +1,937 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "This template setup LEMP Server",
+  "Parameters": {
+    "ENV": {
+      "Description": "Select environment",
+      "Type": "String",
+      "AllowedValues": [
+        "Dev",
+        "Staging",
+        "Prod"
+      ],
+      "Default": "Dev"
+    },
+    "VolumeSize": {
+      "Description": "Enter Required Volume",
+      "Type": "Number",
+      "Default": 10
+    },
+    "MYSQLVolumeSize": {
+      "Description": "Enter Required Volume",
+      "Type": "Number",
+      "Default": 10
+    },
+    "AZ": {
+      "Description": "Select AZ selected",
+      "Type": "String",
+      "AllowedValues": [
+        "1a",
+        "1b",
+        "1c",
+        "2a",
+        "2b",
+        "2c",
+        "3a",
+        "3b",
+        "3c"
+      ]
+    },
+    "ALBSubnets": {
+  "Type": "List<AWS::EC2::Subnet::Id>",
+  "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+  "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud."
+
+},
+    "Subnet": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud."
+    },
+    "VPC": {
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "KeyName": {
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    },
+    "MysqlKeyName": {
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    },
+    "Ec2Instance": {
+      "Description": "Client name",
+      "Type": "String"
+    },
+    "InstanceType": {
+      "Description": "WebServer EC2 instance type",
+      "Type": "String",
+      "Default": "t3a.small",
+      "AllowedValues": [
+        "t3a.nano",
+        "t3a.micro",
+        "t3a.small",
+        "t3a.medium",
+        "t3a.large",
+        "t3a.xlarge",
+        "t3a.2xlarge",
+        "t3.nano",
+        "t3.micro",
+        "t3.small",
+        "t3.medium",
+        "t3.large",
+        "t3.xlarge",
+        "t3.2xlarge",
+        "m5.large",
+        "m5.xlarge",
+        "m5.2xlarge",
+        "m5.4xlarge",
+        "c5.large",
+        "c5.xlarge",
+        "c5.2xlarge",
+        "c5.4xlarge",
+        "r5.large",
+        "r5.xlarge",
+        "r5.2xlarge",
+        "r5.4xlarge"
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+    },
+    "VPCCidr": {
+      "Type": "String",
+      "Default": "10.1.0.0/16",
+      "Description": "CIDR IP to be granted access by the SG, use 0.0.0.0/0 to accept all IPs"
+    }
+  },
+  "Mappings": {
+    "AWSRegionArch2AMI": {
+      "us-east-1": {
+        "AMAZONLINUXAMI": "ami-b70554c8"
+      },
+      "us-east-2": {
+        "AMAZONLINUXAMI": "ami-8c122be9"
+      },
+      "us-west-1": {
+        "AMAZONLINUXAMI": "ami-e0ba5c83"
+      },
+      "us-west-2": {
+        "AMAZONLINUXAMI": "ami-a9d09ed1"
+      },
+      "ca-central-1": {
+        "AMAZONLINUXAMI": "ami-0ee86a6a"
+      },
+      "eu-west-1": {
+        "AMAZONLINUXAMI": "ami-466768ac"
+      },
+      "eu-central-1": {
+        "AMAZONLINUXAMI": "ami-7c4f7097"
+      },
+      "eu-west-2": {
+        "AMAZONLINUXAMI": "ami-b8b45ddf"
+      },
+      "ap-southeast-1": {
+        "AMAZONLINUXAMI": "ami-05868579"
+      },
+      "ap-southeast-2": {
+        "AMAZONLINUXAMI": "ami-39f8215b"
+      },
+      "ap-northeast-2": {
+        "AMAZONLINUXAMI": "ami-afd86dc1"
+      },
+      "ap-northeast-1": {
+        "AMAZONLINUXAMI": "ami-e99f4896"
+      },
+      "ap-south-1": {
+        "AMAZONLINUXAMI": "ami-d783a9b8"
+      },
+      "sa-east-1": {
+        "AMAZONLINUXAMI": "ami-6dca9001"
+      }
+    }
+  },
+  "Resources": {
+    "WebServerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable HTTP & HTTPS access via port 80 & 443",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "443",
+            "ToPort": "443",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "2223",
+            "ToPort": "2223",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Fn::Sub": "${Ec2Instance}-WebServer-${ENV}-SG"
+                  }
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "MYSqlServerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable MYSQL port access via port 3306",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "3306",
+            "ToPort": "3306",
+            "CidrIp": {
+              "Ref": "VPCCidr"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "2223",
+            "ToPort": "2223",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Fn::Sub": "${Ec2Instance}-MYSQL-${ENV}-SG"
+                  }
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "WebServer": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "configSets": {
+            "setup_install_server": [
+              "install_cfn",
+              "install_epel_update",
+              "install_php",
+              "install_nginx",
+              "get_files",
+              "configure_server_files_services",
+              "nginx_conf_file"
+            ]
+          },
+          "install_cfn": {
+            "files": {
+              "/etc/cfn/cfn-hup.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[main]\n",
+                      "stack=",
+                      {
+                        "Ref": "AWS::StackId"
+                      },
+                      "\n",
+                      "region=",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              },
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[cfn-auto-reloader-hook]\n",
+                      "triggers=post.update\n",
+                      "path=Resources.WebServer.Metadata.AWS::CloudFormation::Init\n",
+                      "action=/opt/aws/bin/cfn-init -v ",
+                      "         --stack ",
+                      {
+                        "Ref": "AWS::StackName"
+                      },
+                      "         --resource WebServer ",
+                      "         --configsets setup_install_server ",
+                      "         --region ",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              }
+            },
+            "services": {
+              "sysvinit": {
+                "cfn-hup": {
+                  "enabled": "true",
+                  "ensureRunning": "true",
+                  "files": [
+                    "/etc/cfn/cfn-hup.conf",
+                    "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+                  ]
+                }
+              }
+            }
+          },
+          "install_epel_update": {
+            "commands": {
+              "01_install_server_update": {
+                "command": "sudo yum update -y"
+              },
+              "02_install_mysql8": {
+                "command": "sudo yum install https://dev.mysql.com/get/mysql80-community-release-el7-3.noarch.rpm -y"
+              },
+              "03_repolist": {
+                "command": "sudo yum repolist"
+              },
+              "04_install_epel": {
+                "command": "sudo amazon-linux-extras install epel -y"
+              }
+            }
+          },
+          "install_php": {
+            "commands": {
+              "01_enable_php7.4": {
+                "command": "sudo amazon-linux-extras enable php7.4"
+              },
+              "02_clean_metadata": {
+                "command": "sudo yum clean metadata"
+              },
+              "03_install_php": {
+                "command": "sudo yum install php php-common php-pear -y"
+              },
+              "04_install_php_modules": {
+                "command": "sudo yum install php-{cgi,curl,mbstring,gd,mysqlnd,gettext,json,xml,fpm,intl,zip} -y"
+              }
+            }
+          },
+          "install_nginx": {
+            "commands": {
+              "01_enable_nginx": {
+                "command": "sudo amazon-linux-extras enable nginx1"
+              },
+              "02_clean_metadata_nginx": {
+                "command": "sudo yum clean metadata"
+              },
+              "03_install_nginx": {
+                "command": "sudo yum -y install nginx"
+              }
+            }
+          },
+          "get_files": {
+            "commands": {
+              "01_get_files": {
+                "command": "echo \"<h1>Hello World Server Deployed by WorkMates for $(hostname -f)</h1>\" > /var/www/html/index.html"
+              },
+              "02_set_user_group": {
+                "command": "chown -R apache:apache /var/www/html"
+              }
+            }
+          },
+          "configure_server_files_services": {
+            "commands": {
+              "01_nginx_path": {
+                "command": "sed -i -e 's/\\/usr\\/share\\/nginx\\/html;/\\/var\\/www\\/html;/g' /etc/nginx/nginx.conf"
+              },
+              "02_nginx_restart": {
+                "command": "service nginx restart"
+              },
+              "03_post_max_size": {
+                "command": "sed -i '672s/8M/25M/' /etc/php.ini"
+              },
+              "04_memory_limit": {
+                "command": "sed -i '404s/128M/256M/' /etc/php.ini"
+              },
+              "04_max_input_vars": {
+                "command": "sed -i '400s/$/\\n\\0 max_input_vars = 3000/' /etc/php.ini"
+              },
+              "05_www_request_terminate": {
+                "command": "sed -i '332s/$/\\n\\0 request_terminate_timeout = 30/' /etc/php-fpm.d/www.conf"
+              },
+              "06_php_fpm_www_conf": {
+                "command": "sed -i '38s/$/\\n\\0listen = 127.0.0.1:9000/' /etc/php-fpm.d/www.conf"
+              },
+              "07_listen_comment": {
+                "command": "sed -i '38s/^/;/' /etc/php-fpm.d/www.conf"
+              }
+            },
+            "services": {
+              "sysvinit": {
+                "nginx": {
+                  "enabled": "true",
+                  "ensureRunning": "true"
+                },
+                "php-fpm": {
+                  "enabled": "true",
+                  "ensureRunning": "true"
+                }
+              }
+            }
+          },
+          "nginx_conf_file": {
+            "files": {
+              "/etc/nginx/conf.d/virtual.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "server {\r\n\r\n    location / {\r\n        root   /var/www/html;\r\n        try_files $uri $uri/ /index.php?$args;\r\n        index index.html index.htm index.php;\r\n        fastcgi_buffers 8 16k; # increase the buffer size for PHP-FTP\r\n        fastcgi_buffer_size 32k; # increase the buffer size for PHP-FTP\r\n        fastcgi_connect_timeout 60;\r\n        fastcgi_send_timeout 300;\r\n        fastcgi_read_timeout 300;\r\n        gzip_static on;\r\n    }\r\n\r\n location ~ \\.php$ {\r\n                root /var/www/html;\r\n                fastcgi_split_path_info ^(.+\\.php)(/.+)$;\r\n                fastcgi_read_timeout 3000;\r\n                #fastcgi_pass /run/php-fpm/www.sock;\r\n\t\t\t\tfastcgi_pass 127.0.0.1:9000;\r\n                fastcgi_index index.php;\r\n                fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\r\n                include fastcgi_params;\r\n                fastcgi_param SCRIPT_NAME $fastcgi_script_name;\r\n                include fastcgi.conf;\r\n}\r\n}"
+                    ]
+                  ]
+                },
+                "mode": "000644",
+                "owner": "root",
+                "group": "root"
+              }
+            },
+            "commands": {
+              "01_php_restart": {
+                "command": "service php-fpm restart"
+              },
+              "02_nginx_restart": {
+                "command": "service nginx restart"
+              },
+              "03_change_port_ssh": {
+                "command": "sudo sed -i \"s/#Port 22/Port 2223/\" /etc/ssh/sshd_config"
+              },
+              "04_sshd_restart": {
+                "command": "sudo service sshd restart"
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AWSRegionArch2AMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            "AMAZONLINUXAMI"
+          ]
+        },
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+              "VolumeType": "gp3",
+              "DeleteOnTermination": "true",
+              "VolumeSize": {
+                "Ref": "VolumeSize"
+              }
+            }
+          }
+        ],
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${Ec2Instance}-WebServer-${ENV}-${AZ}"
+            }
+          },
+          {
+            "Key": "Env",
+            "Value": {
+              "Ref": "ENV"
+            }
+          },
+          {
+            "Key": "Layer",
+            "Value": "Web"
+          },
+          {
+            "Key": "ImplementedBy",
+            "Value": "Workmates"
+          }
+        ],
+        "SecurityGroupIds": [
+          {
+            "Ref": "WebServerSecurityGroup"
+          }
+        ],
+        "SubnetId": {
+          "Ref": "Subnet"
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash -xe\n",
+                "yum update -y aws-cfn-bootstrap\n",
+                "/opt/aws/bin/cfn-init -v ",
+                "         --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                "         --resource WebServer ",
+                "         --configsets setup_install_server ",
+                "         --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n",
+                "/opt/aws/bin/cfn-signal -e $? ",
+                "         --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                "         --resource WebServer ",
+                "         --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n"
+              ]
+            ]
+          }
+        }
+      },
+      "CreationPolicy": {
+        "ResourceSignal": {
+          "Timeout": "PT15M"
+        }
+      }
+    },
+    "MySQLServer": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "configSets": {
+            "mysql_install": [
+              "install_cfn",
+              "install_epel_mysql_update"
+            ]
+          },
+          "install_cfn": {
+            "files": {
+              "/etc/cfn/cfn-hup.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[main]\n",
+                      "stack=",
+                      {
+                        "Ref": "AWS::StackId"
+                      },
+                      "\n",
+                      "region=",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              },
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[cfn-auto-reloader-hook]\n",
+                      "triggers=post.update\n",
+                      "path=Resources.MySQLServer.Metadata.AWS::CloudFormation::Init\n",
+                      "action=/opt/aws/bin/cfn-init -v ",
+                      "         --stack ",
+                      {
+                        "Ref": "AWS::StackName"
+                      },
+                      "         --resource MySQLServer ",
+                      "         --configsets mysql_install ",
+                      "         --region ",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              }
+            },
+            "services": {
+              "sysvinit": {
+                "cfn-hup": {
+                  "enabled": "true",
+                  "ensureRunning": "true",
+                  "files": [
+                    "/etc/cfn/cfn-hup.conf",
+                    "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+                  ]
+                }
+              }
+            }
+          },
+          "install_epel_mysql_update": {
+            "commands": {
+              "01_install_server_update": {
+                "command": "sudo yum update -y"
+              },
+              "02_install_mysql8": {
+                "command": "sudo yum install https://dev.mysql.com/get/mysql80-community-release-el7-3.noarch.rpm -y"
+              },
+              "03_repolist": {
+                "command": "sudo yum repolist"
+              },
+              "04_install_epel": {
+                "command": "sudo amazon-linux-extras install epel -y"
+              },
+              "05_install_mysql_server": {
+                "command": "sudo yum install mysql-community-server -y"
+              },
+              "06_enable_mysql": {
+                "command": "sudo systemctl enable --now mysqld"
+              },
+              "07_restart_mysql": {
+                "command": "sudo service mysqld restart"
+              },
+              "08_chkconfig_mysql": {
+                "command": "sudo chkconfig mysqld on"
+              },
+              "09_change_port_ssh": {
+                "command": "sudo sed -i \"s/#Port 22/Port 2223/\" /etc/ssh/sshd_config"
+              },
+              "10_sshd_restart": {
+                "command": "sudo service sshd restart"
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AWSRegionArch2AMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            "AMAZONLINUXAMI"
+          ]
+        },
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+              "VolumeType": "gp3",
+              "DeleteOnTermination": "true",
+              "VolumeSize": {
+                "Ref": "MYSQLVolumeSize"
+              }
+            }
+          }
+        ],
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${Ec2Instance}-MYSQLServer-${ENV}-${AZ}"
+            }
+          },
+          {
+            "Key": "Env",
+            "Value": {
+              "Ref": "ENV"
+            }
+          },
+          {
+            "Key": "Layer",
+            "Value": "DB"
+          },
+          {
+            "Key": "ImplementedBy",
+            "Value": "Workmates"
+          }
+        ],
+        "SecurityGroupIds": [
+          {
+            "Ref": "MYSqlServerSecurityGroup"
+          }
+        ],
+        "SubnetId": {
+          "Ref": "Subnet"
+        },
+        "KeyName": {
+          "Ref": "MysqlKeyName"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash -xe\n",
+                "yum update -y aws-cfn-bootstrap\n",
+                "/opt/aws/bin/cfn-init -v ",
+                "         --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                "         --resource MySQLServer ",
+                "         --configsets mysql_install ",
+                "         --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n",
+                "/opt/aws/bin/cfn-signal -e $? ",
+                "         --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                "         --resource MySQLServer ",
+                "         --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n"
+              ]
+            ]
+          }
+        }
+      },
+      "CreationPolicy": {
+        "ResourceSignal": {
+          "Timeout": "PT15M"
+        }
+      }
+    },
+    "DefaultTargetGroup": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 15,
+        "HealthCheckPath": "/",
+        "HealthCheckProtocol": "HTTP",
+        "HealthCheckTimeoutSeconds": 10,
+        "HealthyThresholdCount": 2,
+        "UnhealthyThresholdCount": 2,
+        "Matcher": {
+          "HttpCode": "200-299"
+        },
+        "TargetGroupAttributes": [
+          {
+            "Key": "deregistration_delay.timeout_seconds",
+            "Value": "20"
+          }
+        ],
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "WebServer"
+            },
+            "Port": 80
+          }
+        ],
+        "Name": {"Fn::Sub": "${Ec2Instance}-WebServer-${ENV}-TG"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Sub": "${Ec2Instance}-WebServer-${ENV}-TG"
+            }
+          }
+        ],
+        "Port": 80,
+        "Protocol": "HTTP",
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "LoadBalancerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "GroupDescription": "Load Balancer Security Group",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Sub": "${Ec2Instance}-LoadBalancer-${ENV}-SG"
+            }
+          }
+        ],
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "LoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {
+        "SecurityGroups": [
+          {
+            "Ref": "LoadBalancerSecurityGroup"
+          }
+        ],
+        "LoadBalancerAttributes": [
+          {
+            "Key": "idle_timeout.timeout_seconds",
+            "Value": "60"
+          }
+        ],
+        "Subnets": {
+          "Ref": "ALBSubnets"
+        },
+        "Name": {"Fn::Sub": "${Ec2Instance}-WebServer-${ENV}-LB"
+        }
+      }
+    },
+    "HttpListener": {
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties": {
+        "DefaultActions": [
+          {
+            "TargetGroupArn": {
+              "Ref": "DefaultTargetGroup"
+            },
+            "Type": "forward"
+          }
+        ],
+        "LoadBalancerArn": {
+          "Ref": "LoadBalancer"
+        },
+        "Port": 80,
+        "Protocol": "HTTP"
+      }
+    }
+  },
+  "Outputs": {
+    "URL" : {
+    "Description" : "URL of the sample website",
+    "Value" :  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "LoadBalancer", "DNSName" ]}]]}
+  },
+    "MYSQL": {
+      "Description": "Get MYSQL root password",
+      "Value": {
+        "Fn::Sub": "sudo grep 'temporary password' /var/log/mysqld.log"
+      }
+    }
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Server Configuration"
+          },
+          "Parameters": [
+            "Ec2Instance",
+            "MysqlKeyName",
+            "KeyName",
+            "InstanceType",
+            "VolumeSize",
+            "MYSQLVolumeSize",
+            "ENV"
+          ]
+        },
+        {
+          "Label": {
+            "default": "LoadBalancer Configuration"
+          },
+          "Parameters": [
+            "ALBSubnets"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Network Configuration"
+          },
+          "Parameters": [
+            "VPC",
+            "Subnet",
+            "AZ",
+            "VPCCidr"
+          ]
+        }
+      ],
+      "ParameterLabels": {
+        "Ec2Instance": {
+          "default": "Client Name"
+        },
+        "KeyName": {
+          "default": "WebServer KeyPair"
+        },
+        "MysqlKeyName": {
+          "default": "MYSQL Server KeyPair"
+        },
+        "AZ": {
+          "default": "AZ Tag"
+        },
+        "VPCCidr": {
+          "default": "VPC CIDR"
+        }
+      }
+    }
+  }
+}

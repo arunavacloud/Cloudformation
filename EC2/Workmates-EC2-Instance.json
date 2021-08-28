@@ -1,0 +1,310 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Create EC2 Insatnce with any AMI stack by workmates",
+  "Parameters": {
+    "ClientName": {
+      "Type": "String",
+      "Description": "Please enter client name here"
+    },
+    "Env": {
+      "Type": "String",
+      "Description": "Select Env of the instance",
+      "AllowedValues": [
+        "Dev",
+        "Prod",
+        "Staging"
+      ]
+    },
+    "AppName": {
+      "Type": "String",
+      "Description": "Select project name",
+      "AllowedValues": [
+        "DB",
+        "App"
+      ]
+    },
+    "VPC": {
+      "Type": "AWS::EC2::VPC::Id",
+      "Description": "VpcId of your existing Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be the VPC Id of an existing Virtual Private Cloud."
+    },
+    "Subnets": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a select existing subnets associated . They should be residing in the selected Virtual Private Cloud."
+    },
+    "SSHKeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "SSH Key for the OpenVPN Instance",
+      "ConstraintDescription": "Must be the name of an existing EC2 KeyPair."
+    },
+    "ClientIPCIDR": {
+      "Type": "String",
+      "Default": "0.0.0.0/0",
+      "Description": "CIDR IP to be granted access by the SG, use 0.0.0.0/0 to accept all IPs"
+    },
+    "AMI": {
+      "Type": "String",
+      "Default": "ami-0c8ad4b0ff2d20c79",
+      "Description": "View (https://www.centos.org/download/aws-images) for centos / (https://cloud-images.ubuntu.com/locator/ec2) for ubuntu / (https://aws.amazon.com/amazon-linux-ami/) for Amazon Linux 2"
+    },
+    "Volume": {
+      "Description": "Enter Volume Size",
+      "Type": "Number",
+      "Default": "50"
+    },
+    "InstanceType": {
+      "Description": "WebServer EC2 instance type",
+      "Type": "String",
+      "Default": "t3a.small",
+      "AllowedValues": [
+        "t4g.nano",
+        "t4g.micro",
+        "t4g.small",
+        "t4g.medium",
+        "t4g.large",
+        "t4g.xlarge",
+        "t4g.2xlarge",
+        "t3a.nano",
+        "t3a.micro",
+        "t3a.small",
+        "t3a.medium",
+        "t3.nano",
+        "t3.micro",
+        "t3.small",
+        "t3.medium",
+        "t3.large",
+        "t3.xlarge",
+        "t3.2xlarge",
+        "m5.large",
+        "m5.xlarge",
+        "m5.2xlarge",
+        "m5.4xlarge",
+        "m6g.medium",
+        "m6g.large",
+        "m6g.xlarge",
+        "m6g.2xlarge",
+        "m6g.4xlarge",
+        "m6g.8xlarge",
+        "m6g.12xlarge",
+        "m6g.16xlarge",
+        "c5.large",
+        "c5.xlarge",
+        "c5.2xlarge",
+        "c5.4xlarge",
+        "c6g.medium",
+        "c6g.large",
+        "c6g.xlarge",
+        "c6g.2xlarge",
+        "c6g.4xlarge",
+        "c6g.8xlarge",
+        "c6g.12xlarge",
+        "c6g.16xlarge",
+        "r5.large",
+        "r5.xlarge",
+        "r5.2xlarge",
+        "r5.4xlarge",
+        "r6g.medium",
+        "r6g.large",
+        "r6g.xlarge",
+        "r6g.2xlarge",
+        "r6g.4xlarge",
+        "r6g.8xlarge",
+        "r6g.12xlarge",
+        "r6g.16xlarge"
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+    },
+    "DriveName": {
+      "Type": "String",
+      "Description": "Select project name",
+      "AllowedValues": [
+        "/dev/xvda",
+        "/dev/sda1"
+      ]
+    }
+  },
+  "Resources": {
+    "InstanceSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": {
+          "Fn::Sub": "SG for ${AppName} Server"
+        },
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 8080,
+            "ToPort": 8080,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 2223,
+            "ToPort": 2223,
+            "CidrIp": {
+              "Ref": "ClientIPCIDR"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "CidrIp": {
+              "Ref": "ClientIPCIDR"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 3336,
+            "ToPort": 3336,
+            "CidrIp": {
+              "Ref": "ClientIPCIDR"
+            }
+          }
+
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${ClientName}-${Env}-${AppName}-SG"
+            }
+          }
+        ]
+      }
+    },
+    "EC2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "DisableApiTermination": true,
+        "ImageId": {
+          "Ref": "AMI"
+        },
+        "SubnetId": {
+          "Ref": "Subnets"
+        },
+        "SecurityGroupIds": [
+          {
+            "Ref": "InstanceSG"
+          }
+        ],
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": {
+              "Ref": "DriveName"
+            },
+            "Ebs": {
+              "VolumeType": "gp3",
+              "DeleteOnTermination": "true",
+              "VolumeSize": {
+                "Ref": "Volume"
+              }
+            }
+          }
+        ],
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "KeyName": {
+          "Ref": "SSHKeyName"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${ClientName}-${Env}-${AppName}"
+            }
+          },
+          {
+            "Key": "Implementedby",
+            "Value": "Workmates"
+          },
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "ClientName"
+            }
+          },
+          {
+            "Key": "Layer",
+            "Value": {
+              "Ref": "Env"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {},
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Client Configuration"
+          },
+          "Parameters": [
+            "ClientName",
+            "Env",
+            "AppName"
+          ]
+        },
+        {
+          "Label": {
+            "default": "EC2 Configuration"
+          },
+          "Parameters": [
+            "InstanceType",
+            "SSHKeyName",
+            "Volume",
+            "DriveName",
+            "AMI"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Network Configuration"
+          },
+          "Parameters": [
+            "VPC",
+            "Subnets",
+            "ClientIPCIDR"
+          ]
+        }
+      ],
+      "ParameterLabels": {
+        "ClientName": {
+          "default": "Client Name"
+        },
+        "SSHKeyName": {
+          "default": "Existing Key Pair"
+        },
+        "ClientIPCIDR": {
+          "default": "VPC CIDR"
+        },
+        "Env": {
+          "default": "Stage"
+        },
+        "AppName": {
+          "default": "Application"
+        }
+      }
+    }
+  }
+}

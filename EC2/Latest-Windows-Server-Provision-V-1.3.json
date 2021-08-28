@@ -1,0 +1,1293 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Template to provision windows with CloudWatchAgent",
+  "Parameters": {
+    "OpenVPNIP": {
+      "Description": "Enter Open VPN IP Address",
+      "Default": "0.0.0.0",
+      "Type": "String",
+      "MinLength": "6",
+      "MaxLength": "18",
+      "AllowedPattern": "^([0-9]+\\.){3}[0-9]+$"
+    },
+    "AdditionalDrive": {
+      "Type": "String",
+      "AllowedValues": [
+        true,
+        false
+      ],
+      "Default": false,
+      "Description": "Do you want to create addition partition"
+    },
+    "UserPass": {
+      "Description": "Enter User Password. Default : P@ssword1",
+      "NoEcho": "true",
+      "Type": "String",
+      "Default": "P@ssword1"
+    },
+    "PrivateSubnet": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud."
+    },
+    "VPC": {
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "RootVolumeSize": {
+      "Description": "Input Root Volume Size",
+      "Type": "Number",
+      "Default": "30"
+    },
+    "UserVolumeSize": {
+      "Description": "Input User Volume Size",
+      "Type": "Number",
+      "Default": "30"
+    },
+    "WindowsServerVersion": {
+      "Description": "Input Windows Server latest name. Use Windows_Server-2016-English-Full-Base / Windows_Server-2012-R2_RTM-English-64Bit-Base / Windows_Server-2016-English-Full-SQL_2017_Web as per your requirement",
+      "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+      "Default": "/aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base"
+    },
+    "InstanceType": {
+      "Description": "Amazon EC2 instance type",
+      "Type": "String",
+      "Default": "t3.small",
+      "AllowedValues": [
+        "t3.micro",
+        "t3.small",
+        "t3.medium",
+        "t3.large",
+        "t3.xlarge",
+        "t3.2xlarge",
+        "c5.large",
+        "c5.xlarge",
+        "c5.2xlarge",
+        "c5.4xlarge",
+        "c5.9xlarge",
+        "c5.12xlarge",
+        "m5.large",
+        "m5.xlarge",
+        "m5.2xlarge",
+        "m5.4xlarge",
+        "m5.8xlarge",
+        "m5.12xlarge"
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+    },
+    "EC2InstanceName": {
+      "Description": "Input Instance Name",
+      "Type": "String",
+      "Default": ""
+    },
+    "SourceCidrForRDP": {
+      "Description": "IP Cidr from which you are likely to RDP into the instances. You can add rules later by modifying the created security groups e.g. 54.32.98.160/32",
+      "Default": "0.0.0.0/0",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "AllowedPattern": "^([0-9]+\\.){3}[0-9]+\\/[0-9]+$"
+    },
+    "KeyPairAppDB": {
+      "Description": "Name of an existing Application and DB KeyPair to enable SSH access",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    },
+    "Env": {
+      "Description": "Enter Env Name Defalut: Prod",
+      "Type": "String",
+      "Default": "Prod"
+    },
+    "Project": {
+      "Description": "Enter Project Name",
+      "Type": "String"
+    },
+    "Layer": {
+      "Description": "Enter Layer Name Defalut: APP-and-DB",
+      "Type": "String",
+      "Default": "APP-and-DB"
+    }
+  },
+  "Conditions": {
+    "AdditionalDrive": {
+      "Fn::Equals": [
+        {
+          "Ref": "AdditionalDrive"
+        },
+        true
+      ]
+    },
+    "AdditionalDriveNo": {
+      "Fn::Equals": [
+        {
+          "Ref": "AdditionalDrive"
+        },
+        false
+      ]
+    }
+  },
+  "Resources": {
+    "PasswordGeneratorRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "GeneratePassword",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "secretsmanager:GetRandomPassword"
+,
+                  "Resource": "*"
+                }
+              ]
+            }
+          },
+          {
+            "PolicyName": "CreateSsmParams",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:PutParameter",
+                    "ssm:DeleteParameter",
+                    "kms:Encrypt"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ],
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+      }
+    },
+    "PasswordGeneratorLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Description": "Generates random password",
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "PasswordGeneratorRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "ZipFile": "const response = require('cfn-response');\nconst AWS = require('aws-sdk');\nconst ssm = new AWS.SSM();\nconst secretsManager = new AWS.SecretsManager();\nexports.handler = (event, context) => {\n  if (event.RequestType == 'Delete') {\n    // Remove param when CloudFormation deletes the resource. The param name is the PhysicalResourceId\n    ssm.deleteParameter({ Name: event.PhysicalResourceId }).promise()\n      .then((data) => {\n        return response.send(event, context, response.SUCCESS, data);\n    }).catch((err)=> {\n        return response.send(event, context, response.FAILED, err);\n    });\n  }\n  else{ // Create or Update. Update (only happens when param name changes) will return a new physical id which will cause CF to delete the old one\n    let responseData;\n    secretsManager.getRandomPassword({ PasswordLength: 45, ExcludePunctuation: true }).promise()\n      .then((data) => {\n        const password = data.RandomPassword.substring(0, 32); // We only really wanted 32 chars for the password\n        const randomString = data.RandomPassword.substring(32); // Last 13 used to add randomness to the SSM param name to avoid deletion on replacement\n        const paramName = event.ResourceProperties.ParameterNamePrefix + '-' + randomString;\n        responseData = {\n          ParameterName: paramName,\n          EncodedParameterName: encodeURIComponent(encodeURIComponent(paramName)), // Double encoded to work with AWS console\n          Password: password\n        }\n        const params = {\n          Name: paramName,\n          Type: 'SecureString',\n          Value: password,\n          Overwrite: true\n        };\n        return ssm.putParameter(params).promise();\n    }).then(() => {\n        return response.send(event, context, response.SUCCESS, responseData, responseData.ParameterName); // Use param name as PhysicalResourceId\n    }).catch((err)=> {\n        return response.send(event, context, response.FAILED, err);\n    });\n  }\n};\n"
+        },
+        "Runtime": "nodejs12.x",
+        "Timeout": "30"
+      }
+    },
+    "GeneratedPassword": {
+      "Type": "AWS::CloudFormation::CustomResource",
+      "Properties": {
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "PasswordGeneratorLambda",
+            "Arn"
+          ]
+        },
+        "ParameterNamePrefix": {
+          "Fn::Sub": "/new/windows/master-password-${EC2InstanceName}"
+        }
+      }
+    },
+    "EC2Instance": {
+      "Condition": "AdditionalDrive",
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "configSets": {
+            "default": [
+              "00_setupCfnHup",
+              "01_CfnHup_service",
+              "02_config-amazon-cloudwatch-agent",
+              "03_restart_amazon-cloudwatch-agent",
+              "04_user_creation",
+              "05_name_change",
+              "06_port_change",
+              "07_task"
+            ],
+            "UpdateEnvironment": [
+              "02_config-amazon-cloudwatch-agent",
+              "03_restart_amazon-cloudwatch-agent"
+            ]
+          },
+          "00_setupCfnHup": {
+            "files": {
+              "c:\\cfn\\cfn-hup.conf": {
+                "content": {
+                  "Fn::Sub": "[main]\nstack=${AWS::StackId}\nregion=${AWS::Region}\ninterval=1\n"
+                }
+              },
+              "c:\\cfn\\hooks.d\\amazon-cloudwatch-agent-auto-reloader.conf": {
+                "content": {
+                  "Fn::Sub": "[cfn-auto-reloader-hook]\ntriggers=post.update\npath=Resources.EC2Instance.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent\naction=cfn-init.exe -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region} --configsets UpdateEnvironment\n"
+                }
+              }
+            }
+          },
+          "01_CfnHup_service": {
+            "services": {
+              "windows": {
+                "cfn-hup": {
+                  "enabled": "true",
+                  "ensureRunning": "true",
+                  "files": [
+                    "c:\\cfn\\cfn-hup.conf",
+                    "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                  ]
+                }
+              }
+            }
+          },
+          "02_config-amazon-cloudwatch-agent": {
+            "files": {
+              "C:\\ProgramData\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent.json": {
+                "content": {
+                  "Fn::Sub": "{\n   \"metrics\": {\n   \"append_dimensions\": {\n  \"AutoScalingGroupName\": \"${!aws:AutoScalingGroupName}\",\n   \"ImageId\": \"${!aws:ImageId}\",\n    \"InstanceId\": \"${!aws:InstanceId}\",\n    \"InstanceType\": \"${!aws:InstanceType}\"\n  },\n   \"metrics_collected\": {\n    \"LogicalDisk\": {\n   \"measurement\": [\n   \"% Free Space\"\n   ],\n   \"metrics_collection_interval\": 60,\n   \"resources\": [\n   \"*\"\n   ]\n   },\n   \"Memory\": {\n   \"measurement\": [\n   \"% Committed Bytes In Use\"\n   ],\n   \"metrics_collection_interval\": 60\n   }\n   }\n   }\n   }\n"
+                }
+              },
+              "c:\\cfn\\hooks.d\\drives.diskpart.txt": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "select disk 1\n",
+                      "attributes disk clear readonly\n",
+                      "clean\n",
+                      "convert gpt\n",
+                      "create partition primary\n",
+                      "format quick fs=ntfs label=",
+                      "\"",
+                      "DATADRIVE",
+                      "\"",
+                      "\n",
+                      "assign letter=D\n"
+                    ]
+                  ]
+                }
+              },
+              "c:\\cfn\\hooks.d\\renamedrives.ps1": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "diskpart /s c:\\cfn\\hooks.d\\drives.diskpart.txt\n"
+                    ]
+                  ]
+                }
+              }
+            }
+          },
+          "03_restart_amazon-cloudwatch-agent": {
+            "commands": {
+              "01_stop_service": {
+                "command": "powershell -Command \"C:\\\\'Program Files'\\\\Amazon\\\\AmazonCloudWatchAgent\\\\amazon-cloudwatch-agent-ctl.ps1 -a stop\""
+              },
+              "02_start_service": {
+                "command": "powershell -Command \"C:\\\\'Program Files'\\\\Amazon\\\\AmazonCloudWatchAgent\\\\amazon-cloudwatch-agent-ctl.ps1 -a fetch-config -m ec2 -c file:C:\\\\ProgramData\\\\Amazon\\\\AmazonCloudWatchAgent\\\\amazon-cloudwatch-agent.json -s\""
+              }
+            }
+          },
+          "04_user_creation": {
+            "files": {
+              "C:\\Downloads\\Amazon\\Installer\\setupusers.ps1": {
+                "content": {
+                  "Fn::Sub": "$password = ConvertTo-SecureString \"${UserPass}\" -AsPlainText -Force\r\n$group = \"Users\"\r\n$admingroup = \"Administrators\"\r\n$users = @(\r\n\"wm-user1\"\r\n\"wm-user2\"\r\n)\r\n$Administrators = @(\r\n\"wm-admin\"\r\n)\r\nforeach ($user in $users) {\r\nNew-LocalUser -Name \"$user\" -Password $Password\r\nAdd-LocalGroupMember -Group \"$group\" -Member \"$user\"\r\n}\r\nforeach ($admin in $Administrators) {\r\nNew-LocalUser -Name \"$admin\" -Password $Password\r\nAdd-LocalGroupMember -Group \"$admingroup\" -Member \"$admin\"\r\n}\r\nnet localgroup \"Remote Desktop Users\" $users /add\r\nnet localgroup \"Remote Desktop Users\" $Administrators /add\n"
+                }
+              }
+            },
+            "commands": {
+              "01_setup_users": {
+                "command": "powershell C:\\Downloads\\Amazon\\Installer\\setupusers.ps1"
+              },
+              "02_rename_drives": {
+                "command": "powershell -ExecutionPolicy Bypass -NoLogo -NonInteractive -NoProfile -File c:\\cfn\\hooks.d\\renamedrives.ps1"
+              }
+            }
+          },
+          "05_name_change": {
+            "files": {
+              "C:\\Downloads\\Amazon\\Installer\\changename.ps1": {
+                "content": {
+                  "Fn::Sub": "$ComputerName = \"${EC2InstanceName}\"\r\nRemove-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\" -name \"Hostname\"\r\nRemove-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\" -name \"NV Hostname\"\r\nSet-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Computername\\Computername\" -name \"Computername\" -value $ComputerName\r\nSet-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Computername\\ActiveComputername\" -name \"Computername\" -value $ComputerName\r\nSet-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\" -name \"Hostname\" -value $ComputerName\r\nSet-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\" -name \"NV Hostname\" -value  $ComputerName\r\nSet-ItemProperty -path \"HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\" -name \"AltDefaultDomainName\" -value $ComputerName\r\nSet-ItemProperty -path \"HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\" -name \"DefaultDomainName\" -value $ComputerName"
+                }
+              }
+            }
+          },
+          "06_port_change": {
+            "files": {
+              "C:\\Users\\Administrator\\Desktop\\cfnsetup.cmd": {
+                "content": {
+                  "Fn::Sub": "\npowershell C:\\Downloads\\Amazon\\Installer\\changename.ps1\nreg query \"hklm\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp\" /v \"PortNumber\"\r\nreg add \"hklm\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp\" /v \"PortNumber\" /t REG_DWORD /d 3339 /f\r\nreg query \"hklm\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp\" /v \"PortNumber\"\r\nnetsh advfirewall firewall add rule name=\"RDP Port 3339\" profile=any protocol=TCP action=allow dir=in localport=3339\npowershell Restart-Service -Force -Name \"TermService\"\ndel /f C:\\Downloads\\Amazon\\Installer\\changename.ps1\ndel /f C:\\Downloads\\Amazon\\Installer\\setupusers.ps1\ncd C:\\Users\\Administrator\\Desktop\\\ndel /f cfnsetup.cmd\n"
+                }
+              }
+            }
+          },
+          "07_task": {
+            "files": {
+              "C:\\Downloads\\Amazon\\Installer\\task.ps1": {
+                "content": {
+                  "Fn::Sub": "$Trigger= New-ScheduledTaskTrigger -AtStartup \r\n$User= \"NT AUTHORITY\\SYSTEM\" \r\n$Action= New-ScheduledTaskAction -Execute \"PowerShell.exe\" -Argument \"C:\\Users\\Administrator\\Desktop\\cfnsetup.cmd\"\r\nRegister-ScheduledTask -TaskName \"CFNSetup\" -Trigger $Trigger -User $User -Action $Action -RunLevel Highest -Force"
+                }
+              }
+            },
+            "commands": {
+              "01_task_run": {
+                "command": "powershell C:\\Downloads\\Amazon\\Installer\\task.ps1"
+              },
+              "02_shutdown": {
+                "command": "powershell shutdown -g -t 120"
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "IamInstanceProfile": {
+          "Ref": "WindowsInstanceProfile"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "<powershell>\n",
+                "net user Administrator ",
+                {
+                  "Fn::GetAtt": [
+                    "GeneratedPassword",
+                    "Password"
+                  ]
+                },
+                "\n",
+                "powershell -Command \"(New-Object Net.WebClient).DownloadFile('http://dl.google.com/chrome/install/375.126/chrome_installer.exe','C:\\Downloads\\Amazon\\Installer\\chrome_installer.exe')\"",
+                "\n",
+                "powershell -Command \"(New-Object Net.WebClient).DownloadFile('https://download.microsoft.com/download/5/E/9/5E9B18CC-8FD5-467E-B5BF-BADE39C51F73/SQLServer2017-SSEI-Expr.exe','C:\\Users\\Administrator\\Desktop\\SQLServer2017-SSEI-Expr.exe')\"",
+                "\n",
+                "C:\\Downloads\\Amazon\\Installer\\chrome_installer.exe",
+                "\n",
+                "& \"C:\\Program Files\\Amazon\\cfn-bootstrap\\cfn-signal.exe\"",
+                " --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " --resource EC2Instance",
+                " --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n",
+                "</powershell>\n",
+                {
+                  "Fn::Sub": "<script>\npowershell -Command C:\\Windows\\System32\\tzutil /s \\\"India Standard Time\\\"\nmkdir C:\\Downloads\\Amazon\\Installer\npowershell -Command \"(New-Object Net.WebClient).DownloadFile('https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi','C:\\Downloads\\Amazon\\Installer\\amazon-cloudwatch-agent.msi')\"\nC:\\Downloads\\Amazon\\Installer\\amazon-cloudwatch-agent.msi\ncfn-init.exe -v --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region} --configsets default\ncfn-signal.exe -e %errorlevel% --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region}\n</script>\n"
+                }
+              ]
+            ]
+          }
+        },
+        "ImageId": { "Ref": "WindowsServerVersion" },
+        "DisableApiTermination": true,
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "VolumeType": "gp3",
+              "VolumeSize": {
+                "Ref": "RootVolumeSize"
+              },
+              "DeleteOnTermination": "true",
+              "Encrypted": "false"
+            }
+          },
+          {
+            "DeviceName": "xvdh",
+            "Ebs": {
+              "DeleteOnTermination": "true",
+              "Encrypted": "false",
+              "VolumeType": "gp3",
+              "VolumeSize": {
+                "Ref": "UserVolumeSize"
+              }
+            }
+          }
+        ],
+        "SecurityGroupIds": [
+          {
+            "Ref": "EC2SecurityGroupPrivate"
+          }
+        ],
+        "SubnetId": {
+          "Ref": "PrivateSubnet"
+        },
+        "KeyName": {
+          "Ref": "KeyPairAppDB"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "EC2InstanceName"
+                  },
+                  {
+                    "Fn::Sub": "${Env}-${Layer}"
+                  },
+                  "1a"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Managedby",
+            "Value": "Workmates"
+          },
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "Project"
+            }
+          },
+          {
+            "Key": "Env",
+            "Value": {
+              "Ref": "Env"
+            }
+          },
+          {
+            "Key": "Layer",
+            "Value": {
+              "Ref": "Layer"
+            }
+          }
+        ],
+        "InstanceType": {
+          "Ref": "InstanceType"
+        }
+      },
+      "CreationPolicy": {
+        "ResourceSignal": {
+          "Count": 1,
+          "Timeout": "PT15M"
+        }
+      }
+    },
+    "EC2WindowsInstance": {
+      "Condition": "AdditionalDriveNo",
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "configSets": {
+            "default": [
+              "00_setupCfnHup",
+              "01_CfnHup_service",
+              "02_config-amazon-cloudwatch-agent",
+              "03_restart_amazon-cloudwatch-agent",
+              "04_user_creation",
+              "05_name_change",
+              "06_port_change",
+              "07_task"
+            ],
+            "UpdateEnvironment": [
+              "02_config-amazon-cloudwatch-agent",
+              "03_restart_amazon-cloudwatch-agent"
+            ]
+          },
+          "00_setupCfnHup": {
+            "files": {
+              "c:\\cfn\\cfn-hup.conf": {
+                "content": {
+                  "Fn::Sub": "[main]\nstack=${AWS::StackId}\nregion=${AWS::Region}\ninterval=1\n"
+                }
+              },
+              "c:\\cfn\\hooks.d\\amazon-cloudwatch-agent-auto-reloader.conf": {
+                "content": {
+                  "Fn::Sub": "[cfn-auto-reloader-hook]\ntriggers=post.update\npath=Resources.EC2WindowsInstance.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent\naction=cfn-init.exe -v --stack ${AWS::StackId} --resource EC2WindowsInstance --region ${AWS::Region} --configsets UpdateEnvironment\n"
+                }
+              }
+            }
+          },
+          "01_CfnHup_service": {
+            "services": {
+              "windows": {
+                "cfn-hup": {
+                  "enabled": "true",
+                  "ensureRunning": "true",
+                  "files": [
+                    "c:\\cfn\\cfn-hup.conf",
+                    "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                  ]
+                }
+              }
+            }
+          },
+          "02_config-amazon-cloudwatch-agent": {
+            "files": {
+              "C:\\ProgramData\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent.json": {
+                "content": {
+                  "Fn::Sub": "{\n   \"metrics\": {\n   \"append_dimensions\": {\n  \"AutoScalingGroupName\": \"${!aws:AutoScalingGroupName}\",\n   \"ImageId\": \"${!aws:ImageId}\",\n    \"InstanceId\": \"${!aws:InstanceId}\",\n    \"InstanceType\": \"${!aws:InstanceType}\"\n  },\n   \"metrics_collected\": {\n    \"LogicalDisk\": {\n   \"measurement\": [\n   \"% Free Space\"\n   ],\n   \"metrics_collection_interval\": 60,\n   \"resources\": [\n   \"*\"\n   ]\n   },\n   \"Memory\": {\n   \"measurement\": [\n   \"% Committed Bytes In Use\"\n   ],\n   \"metrics_collection_interval\": 60\n   }\n   }\n   }\n   }\n"
+                }
+              }
+            }
+          },
+          "03_restart_amazon-cloudwatch-agent": {
+            "commands": {
+              "01_stop_service": {
+                "command": "powershell -Command \"C:\\\\'Program Files'\\\\Amazon\\\\AmazonCloudWatchAgent\\\\amazon-cloudwatch-agent-ctl.ps1 -a stop\""
+              },
+              "02_start_service": {
+                "command": "powershell -Command \"C:\\\\'Program Files'\\\\Amazon\\\\AmazonCloudWatchAgent\\\\amazon-cloudwatch-agent-ctl.ps1 -a fetch-config -m ec2 -c file:C:\\\\ProgramData\\\\Amazon\\\\AmazonCloudWatchAgent\\\\amazon-cloudwatch-agent.json -s\""
+              }
+            }
+          },
+          "04_user_creation": {
+            "files": {
+              "C:\\Downloads\\Amazon\\Installer\\setupusers.ps1": {
+                "content": {
+                  "Fn::Sub": "$password = ConvertTo-SecureString \"${UserPass}\" -AsPlainText -Force\r\n$group = \"Users\"\r\n$admingroup = \"Administrators\"\r\n$users = @(\r\n\"wm-user1\"\r\n\"wm-user2\"\r\n)\r\n$Administrators = @(\r\n\"wm-admin\"\r\n)\r\nforeach ($user in $users) {\r\nNew-LocalUser -Name \"$user\" -Password $Password\r\nAdd-LocalGroupMember -Group \"$group\" -Member \"$user\"\r\n}\r\nforeach ($admin in $Administrators) {\r\nNew-LocalUser -Name \"$admin\" -Password $Password\r\nAdd-LocalGroupMember -Group \"$admingroup\" -Member \"$admin\"\r\n}\r\nnet localgroup \"Remote Desktop Users\" $users /add\r\nnet localgroup \"Remote Desktop Users\" $Administrators /add\n"
+                }
+              }
+            },
+            "commands": {
+              "01_setup_users": {
+                "command": "powershell C:\\Downloads\\Amazon\\Installer\\setupusers.ps1"
+              }
+            }
+          },
+          "05_name_change": {
+            "files": {
+              "C:\\Downloads\\Amazon\\Installer\\changename.ps1": {
+                "content": {
+                  "Fn::Sub": "$ComputerName = \"${EC2InstanceName}\"\r\nRemove-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\" -name \"Hostname\"\r\nRemove-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\" -name \"NV Hostname\"\r\nSet-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Computername\\Computername\" -name \"Computername\" -value $ComputerName\r\nSet-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Computername\\ActiveComputername\" -name \"Computername\" -value $ComputerName\r\nSet-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\" -name \"Hostname\" -value $ComputerName\r\nSet-ItemProperty -path \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\" -name \"NV Hostname\" -value  $ComputerName\r\nSet-ItemProperty -path \"HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\" -name \"AltDefaultDomainName\" -value $ComputerName\r\nSet-ItemProperty -path \"HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\" -name \"DefaultDomainName\" -value $ComputerName"
+                }
+              }
+            }
+          },
+          "06_port_change": {
+            "files": {
+              "C:\\Users\\Administrator\\Desktop\\cfnsetup.cmd": {
+                "content": {
+                  "Fn::Sub": "\npowershell C:\\Downloads\\Amazon\\Installer\\changename.ps1\nreg query \"hklm\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp\" /v \"PortNumber\"\r\nreg add \"hklm\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp\" /v \"PortNumber\" /t REG_DWORD /d 3339 /f\r\nreg query \"hklm\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp\" /v \"PortNumber\"\r\nnetsh advfirewall firewall add rule name=\"RDP Port 3339\" profile=any protocol=TCP action=allow dir=in localport=3339\npowershell Restart-Service -Force -Name \"TermService\"\ndel /f C:\\Downloads\\Amazon\\Installer\\changename.ps1\ndel /f C:\\Downloads\\Amazon\\Installer\\setupusers.ps1\ncd C:\\Users\\Administrator\\Desktop\\\ndel /f cfnsetup.cmd\n"
+                }
+              }
+            }
+          },
+          "07_task": {
+            "files": {
+              "C:\\Downloads\\Amazon\\Installer\\task.ps1": {
+                "content": {
+                  "Fn::Sub": "$Trigger= New-ScheduledTaskTrigger -AtStartup \r\n$User= \"NT AUTHORITY\\SYSTEM\" \r\n$Action= New-ScheduledTaskAction -Execute \"PowerShell.exe\" -Argument \"C:\\Users\\Administrator\\Desktop\\cfnsetup.cmd\"\r\nRegister-ScheduledTask -TaskName \"CFNSetup\" -Trigger $Trigger -User $User -Action $Action -RunLevel Highest -Force"
+                }
+              }
+            },
+            "commands": {
+              "01_task_run": {
+                "command": "powershell C:\\Downloads\\Amazon\\Installer\\task.ps1"
+              },
+              "02_shutdown": {
+                "command": "powershell shutdown -g -t 120"
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "IamInstanceProfile": {
+          "Ref": "WindowsInstanceProfile"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "<powershell>\n",
+                "net user Administrator ",
+                {
+                  "Fn::GetAtt": [
+                    "GeneratedPassword",
+                    "Password"
+                  ]
+                },
+                "\n",
+                "powershell -Command \"(New-Object Net.WebClient).DownloadFile('http://dl.google.com/chrome/install/375.126/chrome_installer.exe','C:\\Downloads\\Amazon\\Installer\\chrome_installer.exe')\"",
+                "\n",
+                "powershell -Command \"(New-Object Net.WebClient).DownloadFile('https://download.microsoft.com/download/5/E/9/5E9B18CC-8FD5-467E-B5BF-BADE39C51F73/SQLServer2017-SSEI-Expr.exe','C:\\Users\\Administrator\\Desktop\\SQLServer2017-SSEI-Expr.exe')\"",
+                "\n",
+                "C:\\Downloads\\Amazon\\Installer\\chrome_installer.exe",
+                "\n",
+                "& \"C:\\Program Files\\Amazon\\cfn-bootstrap\\cfn-signal.exe\"",
+                " --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " --resource EC2WindowsInstance",
+                " --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n",
+                "</powershell>\n",
+                {
+                  "Fn::Sub": "<script>\npowershell -Command C:\\Windows\\System32\\tzutil /s \\\"India Standard Time\\\"\nmkdir C:\\Downloads\\Amazon\\Installer\npowershell -Command \"(New-Object Net.WebClient).DownloadFile('https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi','C:\\Downloads\\Amazon\\Installer\\amazon-cloudwatch-agent.msi')\"\nC:\\Downloads\\Amazon\\Installer\\amazon-cloudwatch-agent.msi\ncfn-init.exe -v --stack ${AWS::StackName} --resource EC2WindowsInstance --region ${AWS::Region} --configsets default\ncfn-signal.exe -e %errorlevel% --stack ${AWS::StackName} --resource EC2WindowsInstance --region ${AWS::Region}\n</script>\n"
+                }
+              ]
+            ]
+          }
+        },
+        "ImageId": {"Ref": "WindowsServerVersion"}
+        ,
+        "DisableApiTermination": true,
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "VolumeType": "gp3",
+              "VolumeSize": {
+                "Ref": "RootVolumeSize"
+              },
+              "DeleteOnTermination": "true",
+              "Encrypted": "false"
+            }
+          }
+        ],
+        "SecurityGroupIds": [
+          {
+            "Ref": "EC2SecurityGroupPrivate"
+          }
+        ],
+        "SubnetId": {
+          "Ref": "PrivateSubnet"
+        },
+        "KeyName": {
+          "Ref": "KeyPairAppDB"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "EC2InstanceName"
+                  },
+                  {
+                    "Fn::Sub": "${Env}-${Layer}"
+                  },
+                  "1a"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Managedby",
+            "Value": "Workmates"
+          },
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "Project"
+            }
+          },
+          {
+            "Key": "Env",
+            "Value": {
+              "Ref": "Env"
+            }
+          },
+          {
+            "Key": "Layer",
+            "Value": {
+              "Ref": "Layer"
+            }
+          }
+        ],
+        "InstanceType": {
+          "Ref": "InstanceType"
+        }
+      },
+      "CreationPolicy": {
+        "ResourceSignal": {
+          "Count": 1,
+          "Timeout": "PT45M"
+        }
+      }
+    },
+    "WindowsInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "InstanceProfileName": {
+          "Ref": "AWS::StackName"
+        },
+        "Roles": [
+          {
+            "Ref": "WindowsRole"
+          }
+        ]
+      }
+    },
+    "WindowsRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/CloudWatchAgentAdminPolicy",
+          "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM"
+        ],
+        "RoleName": {
+          "Ref": "AWS::StackName"
+        }
+      }
+    },
+    "EC2SecurityGroupPrivate": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable access to the App-and-DB",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "3389",
+            "ToPort": "3389",
+            "CidrIp": {
+              "Ref": "SourceCidrForRDP"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "3339",
+            "ToPort": "3339",
+            "CidrIp": {
+              "Ref": "SourceCidrForRDP"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "15.206.48.168/32",
+            "Description": "WorkmatesCore2cloud-Prod-VPN-1a"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "10.3.1.105/32",
+            "Description": "WorkmatesCore2cloud-Prod-VPN-1a"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {
+              "Fn::Join": [
+                "/",
+                [
+                  {
+                    "Ref": "OpenVPNIP"
+                  },
+                  "32"
+                ]
+              ]
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "2223",
+            "ToPort": "2223",
+            "CidrIp": {
+              "Fn::Join": [
+                "/",
+                [
+                  {
+                    "Ref": "OpenVPNIP"
+                  },
+                  "32"
+                ]
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "EC2InstanceName"
+                  },
+                  "Prod-SG"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "WindowsPatchBaseline": {
+        "Type": "AWS::SSM::PatchBaseline",
+        "Properties": {
+            "OperatingSystem": "WINDOWS",
+            "ApprovalRules": {
+                "PatchRules": [
+                    {
+                        "ApproveAfterDays": 0,
+                        "ComplianceLevel": "CRITICAL",
+                        "PatchFilterGroup": {
+                            "PatchFilters": [
+                                {
+                                    "Key": "PRODUCT",
+                                    "Values": [
+                                        "WindowsServer2019"
+                                    ]
+                                },
+                                {
+                                    "Key": "CLASSIFICATION",
+                                    "Values": [
+                                        "CriticalUpdates",
+                                        "DefinitionUpdates",
+                                        "Drivers",
+                                        "SecurityUpdates",
+                                        "ServicePacks",
+                                        "UpdateRollups",
+                                        "Updates"
+                                    ]
+                                },
+                                {
+                                    "Key": "MSRC_SEVERITY",
+                                    "Values": [
+                                        "Critical",
+                                        "Important",
+                                        "Moderate",
+                                        "Low",
+                                        "Unspecified"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            "Description": "Service Catalog EC2 Reference Architecture Patch Baseline for Microsoft Windows instace",
+            "Name": "sc-ec2-ra-windows-patch-baseline"
+        }
+    },
+    "MaintenanceWindowRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+            "Path": "/",
+            "ManagedPolicyArns": [
+                "arn:aws:iam::aws:policy/service-role/AmazonSSMMaintenanceWindowRole"
+            ],
+            "AssumeRolePolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [
+                                "ec2.amazonaws.com",
+                                "ssm.amazonaws.com"
+                            ]
+                        },
+                        "Action": [
+                            "sts:AssumeRole"
+                        ]
+                    }
+                ]
+            }
+        }
+    },
+    "MaintenanceWindow": {
+        "Type": "AWS::SSM::MaintenanceWindow",
+        "Properties": {
+            "Description": "Maintenance window to allow for patching windows instances",
+            "AllowUnassociatedTargets": false,
+            "Cutoff": 2,
+            "Schedule": "cron(* 17 * * ? *)",
+            "Duration": 6,
+            "Name": "sc-ec2-ra-windows-maintenance-window"
+        }
+    },
+    "WindowsMainteanceWindowTarget": {
+      "Condition": "AdditionalDrive",
+        "Type": "AWS::SSM::MaintenanceWindowTarget",
+        "Properties": {
+            "OwnerInformation": "Service Catalog EC2 Reference Architecture",
+            "Description": "Service Catalog EC2 Reference Architecture Maintenance Window for Microsoft Windows Instances",
+            "WindowId": {
+                "Ref": "MaintenanceWindow"
+            },
+            "ResourceType": "INSTANCE",
+            "Targets": [
+                {
+                    "Key": "InstanceIds",
+                    "Values": [
+                        {
+                            "Ref": "EC2Instance"
+                        }
+                    ]
+                }
+            ],
+            "Name": "sc-ec2-ra-windows-patch-targets"
+        }
+    },
+    "WindowsMaintenanceWindowTaskScan": {
+      "Condition": "AdditionalDrive",
+        "Type": "AWS::SSM::MaintenanceWindowTask",
+        "Properties": {
+            "MaxErrors": 1,
+            "Description": "Service Catalog EC2 Reference Architecture Maintenance Window Task: Scan for update for Microsoft Windows Instance",
+            "ServiceRoleArn": {
+                "Fn::GetAtt": [
+                    "MaintenanceWindowRole",
+                    "Arn"
+                ]
+            },
+            "Priority": 1,
+            "MaxConcurrency": 1,
+            "Targets": [
+                {
+                    "Key": "InstanceIds",
+                    "Values": [
+                        {
+                            "Ref": "EC2Instance"
+                        }
+                    ]
+                }
+            ],
+            "Name": "patch-sc-ec2-ra-windows-instances",
+            "TaskArn": "AWS-RunPatchBaseline",
+            "WindowId": {
+                "Ref": "MaintenanceWindow"
+            },
+            "TaskParameters": {
+                "Operation": {
+                    "Values": [
+                        "Scan"
+                    ]
+                }
+            },
+            "TaskType": "RUN_COMMAND"
+        }
+    },
+    "WindowsMaintenanceWindowTask": {
+      "Condition": "AdditionalDrive",
+        "Type": "AWS::SSM::MaintenanceWindowTask",
+        "Properties": {
+            "MaxErrors": 1,
+            "Description": "Service Catalog EC2 Reference Architecture Maintenance Window Task: Install update for Microsoft Windows Instance",
+            "ServiceRoleArn": {
+                "Fn::GetAtt": [
+                    "MaintenanceWindowRole",
+                    "Arn"
+                ]
+            },
+            "Priority": 2,
+            "MaxConcurrency": 1,
+            "Targets": [
+                {
+                    "Key": "InstanceIds",
+                    "Values": [
+                        {
+                            "Ref": "EC2Instance"
+                        }
+                    ]
+                }
+            ],
+            "Name": "patch-sc-ec2-ra-windows-instances",
+            "TaskArn": "AWS-RunPatchBaseline",
+            "WindowId": {
+                "Ref": "MaintenanceWindow"
+            },
+            "TaskParameters": {
+                "Operation": {
+                    "Values": [
+                        "Install"
+                    ]
+                }
+            },
+            "TaskType": "RUN_COMMAND"
+        }
+    },
+    "WindowsMainteanceWindowTargetNo": {
+      "Condition": "AdditionalDriveNo",
+        "Type": "AWS::SSM::MaintenanceWindowTarget",
+        "Properties": {
+            "OwnerInformation": "Service Catalog EC2 Reference Architecture",
+            "Description": "Service Catalog EC2 Reference Architecture Maintenance Window for Microsoft Windows Instances",
+            "WindowId": {
+                "Ref": "MaintenanceWindow"
+            },
+            "ResourceType": "INSTANCE",
+            "Targets": [
+                {
+                    "Key": "InstanceIds",
+                    "Values": [
+                        {
+                            "Ref": "EC2WindowsInstance"
+                        }
+                    ]
+                }
+            ],
+            "Name": "sc-ec2-ra-windows-patch-targets"
+        }
+    },
+    "WindowsMaintenanceWindowTaskScanNo": {
+      "Condition": "AdditionalDriveNo",
+        "Type": "AWS::SSM::MaintenanceWindowTask",
+        "Properties": {
+            "MaxErrors": 1,
+            "Description": "Service Catalog EC2 Reference Architecture Maintenance Window Task: Scan for update for Microsoft Windows Instance",
+            "ServiceRoleArn": {
+                "Fn::GetAtt": [
+                    "MaintenanceWindowRole",
+                    "Arn"
+                ]
+            },
+            "Priority": 1,
+            "MaxConcurrency": 1,
+            "Targets": [
+                {
+                    "Key": "InstanceIds",
+                    "Values": [
+                        {
+                            "Ref": "EC2WindowsInstance"
+                        }
+                    ]
+                }
+            ],
+            "Name": "patch-sc-ec2-ra-windows-instances",
+            "TaskArn": "AWS-RunPatchBaseline",
+            "WindowId": {
+                "Ref": "MaintenanceWindow"
+            },
+            "TaskParameters": {
+                "Operation": {
+                    "Values": [
+                        "Scan"
+                    ]
+                }
+            },
+            "TaskType": "RUN_COMMAND"
+        }
+    },
+    "WindowsMaintenanceWindowTaskNo": {
+      "Condition": "AdditionalDriveNo",
+        "Type": "AWS::SSM::MaintenanceWindowTask",
+        "Properties": {
+            "MaxErrors": 1,
+            "Description": "Service Catalog EC2 Reference Architecture Maintenance Window Task: Install update for Microsoft Windows Instance",
+            "ServiceRoleArn": {
+                "Fn::GetAtt": [
+                    "MaintenanceWindowRole",
+                    "Arn"
+                ]
+            },
+            "Priority": 2,
+            "MaxConcurrency": 1,
+            "Targets": [
+                {
+                    "Key": "InstanceIds",
+                    "Values": [
+                        {
+                            "Ref": "EC2WindowsInstance"
+                        }
+                    ]
+                }
+            ],
+            "Name": "patch-sc-ec2-ra-windows-instances",
+            "TaskArn": "AWS-RunPatchBaseline",
+            "WindowId": {
+                "Ref": "MaintenanceWindow"
+            },
+            "TaskParameters": {
+                "Operation": {
+                    "Values": [
+                        "Install"
+                    ]
+                }
+            },
+            "TaskType": "RUN_COMMAND"
+        }
+    }
+  },
+  "Outputs": {
+    "AppAndDB": {
+      "Description": "InstanceId of the newly created EC2 instance",
+      "Value": {
+        "Ref": "EC2InstanceName"
+      }
+    },
+    "ConsoleLink": {
+      "Description": "RDP Password Storage",
+      "Value": {
+        "Fn::Sub": "https://console.aws.amazon.com/systems-manager/parameters/${GeneratedPassword.EncodedParameterName}/description?region=${AWS::Region}"
+      }
+    },
+    "AdminUsersCreated": {
+      "Description": "Additional Admin Users Created",
+      "Value": {
+        "Fn::Sub": "Admin: wm-admin"
+      }
+    },
+    "LocalUsersCreated": {
+      "Description": "Additional Local Users Created",
+      "Value": {
+        "Fn::Sub": "LocalUser1: wm-user1  /   LocalUser2: wm-user2"
+      }
+    },
+    "UserPass": {
+      "Description": "Password For All Users Created",
+      "Value": {
+        "Ref": "UserPass"
+      }
+    },
+    "ImageId": {
+      "Description": "AMI Used",
+      "Value":{"Ref": "WindowsServerVersion"}
+    },
+    "InstanceType": {
+      "Description": "Instance Type Used",
+      "Value": {
+        "Ref": "InstanceType"
+      }
+    },
+    "InstanceId": {
+      "Condition": "AdditionalDrive",
+      "Description": "Instance Type Used",
+      "Value": {
+        "Ref": "EC2Instance"
+      }
+    },
+    "InstanceIdNo": {
+      "Condition": "AdditionalDriveNo",
+      "Description": "Instance Type Used",
+      "Value": {
+        "Ref": "EC2WindowsInstance"
+      }
+    }
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Instance Configuration"
+          },
+          "Parameters": [
+            "EC2InstanceName",
+            "KeyPairAppDB",
+            "InstanceType",
+            "UserPass"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Environment Configuration"
+          },
+          "Parameters": [
+            "RootVolumeSize",
+            "WindowsServerVersion",
+            "AdditionalDrive",
+            "UserVolumeSize"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Network Configuration"
+          },
+          "Parameters": [
+            "VPC",
+            "PrivateSubnet",
+            "SourceCidrForRDP",
+            "OpenVPNIP"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Tags Configuration"
+          },
+          "Parameters": [
+            "Project",
+            "Env",
+            "Layer"
+          ]
+        }
+      ],
+      "ParameterLabels": {
+        "EC2InstanceName": {
+          "default": "Client Name"
+        },
+        "InstanceType": {
+          "default": "Instance Type"
+        },
+        "KeyPairAppDB": {
+          "default": "Key Pair"
+        },
+        "RootVolumeSize": {
+          "default": "Root Volume Size"
+        },
+        "UserVolumeSize": {
+          "default": "User Volume Size"
+        },
+        "AdditionalDrive": {
+          "default": "Additional Drive"
+        },
+        "WindowsServerVersion": {
+          "default": "Windows Environment"
+        },
+        "UserPass": {
+          "default": "Additional Users Password"
+        },
+        "OpenVPNIP": {
+          "default": "Open VPN IP"
+        }
+      }
+    }
+  }
+}

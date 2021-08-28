@@ -1,0 +1,435 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Template to create EC2 with ALB Stack By Cloud Workmates",
+  "Parameters": {
+      "EC2LatestAmiId": {
+      "Description": "Input Existing AMI ID",
+      "Type": "String"
+
+    },
+    "ENV": {
+      "Description": "Select environment",
+      "Type": "String",
+      "AllowedValues": [
+        "Dev",
+        "Staging",
+        "Prod"
+      ],
+      "Default": "Dev"
+    },
+
+  	"KeyPair": {
+      "Description": "Name of an existing Openvpn KeyPair to enable SSH access",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    },
+
+    "EC2InstanceName": {
+      "Description": "Input Instance Name",
+      "Type": "String"
+
+    },
+		  "AZ": {
+        "Description": "Availability Zone of the Subnet",
+         "Type": "AWS::EC2::AvailabilityZone::Name"
+
+     },
+
+	 	     "AZone": {
+      "Description": "Tag Should match Availability Zone",
+      "Type": "String",
+      "AllowedValues": [
+        "1a",
+        "1b",
+        "1c",
+        "2a",
+        "2b",
+        "2c",
+        "3a",
+        "3b",
+        "3c"
+      ]
+    },
+
+	     "InstanceType" : {
+      "Description" : "WebServer EC2 instance type",
+      "Type" : "String",
+      "Default" : "t3.small",
+      "AllowedValues" : [ "t3.micro","t3.small","t3.medium","t3.large","t3.xlarge","t3.2xlarge", "c5.large", "c5.xlarge","c5.2xlarge","c5.4xlarge","c5.9xlarge","c5.12xlarge","m5.large","m5.xlarge","m5.2xlarge","m5.4xlarge","m5.8xlarge","m5.12xlarge"],
+      "ConstraintDescription" : "must be a valid EC2 instance type."
+    },
+	    "VPC": {
+      "Description": "Select VPC.",
+      "Type" : "AWS::EC2::VPC::Id"
+
+    },
+
+	  "myEC2Subnets": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud."
+
+    },
+
+		    "ALBSubnets": {
+      "Type": "List<AWS::EC2::Subnet::Id>",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud."
+
+    },
+
+	    "SourceCidr" : {
+        "Type" : "CommaDelimitedList",
+        "Description" : "Comma-separated list of unique IP ranges (CIDR) to whitelist for access to openVPN (max 5)",
+
+        "ConstraintDescription" : "List length must be exactly 5, specify _ for unused slots",
+        "Default" : "1.2.3.4/32,_,_,_,_"
+    }
+
+
+	},
+
+"Conditions" : {
+    "SourceCidrSshIngress1" : { "Fn::Not" : [ { "Fn::Equals" : [
+        { "Fn::Select" : [ "0", { "Ref" : "SourceCidr" } ] }, "_" ] } ] },
+    "SourceCidrSshIngress2" : { "Fn::Not" : [ { "Fn::Equals" : [
+        { "Fn::Select" : [ "1", { "Ref" : "SourceCidr" } ] }, "_" ] } ] },
+    "SourceCidrSshIngress3" : { "Fn::Not" : [ { "Fn::Equals" : [
+        { "Fn::Select" : [ "2", { "Ref" : "SourceCidr" } ] }, "_" ] } ] },
+    "SourceCidrSshIngress4" : { "Fn::Not" : [ { "Fn::Equals" : [
+        { "Fn::Select" : [ "3", { "Ref" : "SourceCidr" } ] }, "_" ] } ] },
+    "SourceCidrSshIngress5" : { "Fn::Not" : [ { "Fn::Equals" : [
+        { "Fn::Select" : [ "4", { "Ref" : "SourceCidr" } ] }, "_" ] } ] }
+},
+  "Resources": {
+       "EC2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {},
+      "Properties": {
+	 "DisableApiTermination": true,
+	 "AvailabilityZone" :{"Ref":"AZ"},
+        "InstanceType": {"Ref":"InstanceType"},
+                "SecurityGroupIds": [
+
+                       {"Ref":"InstanceSecurityGroup"}
+
+                ],
+"ImageId": {"Ref":"EC2LatestAmiId"},
+                "SubnetId": {
+          "Ref": "myEC2Subnets"
+        },
+        "Tags": [
+		{
+            "Key": "Name",
+            "Value": {"Fn::Sub":"${EC2InstanceName}-${ENV}-AZone"}
+          },
+		  {
+         "Key": "ImplementedBy",
+         "Value": "Workmates"
+          },
+          {
+            "Key": "Project",
+            "Value": {"Ref": "EC2InstanceName"}
+          },
+          {
+            "Key": "Env",
+            "Value": { "Ref": "ENV" }
+          },
+          {
+            "Key": "Layer",
+            "Value": "APP"
+          }
+        ]
+      }
+    },
+
+	"DefaultTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckIntervalSeconds": 15,
+                "HealthCheckPath": "/",
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 10,
+                "HealthyThresholdCount": 2,
+                "UnhealthyThresholdCount": 2,
+
+				"Matcher": {
+                    "HttpCode": "200-299"
+                },
+				"TargetGroupAttributes": [
+                    {
+                        "Key": "deregistration_delay.timeout_seconds",
+                        "Value": "20"
+                    }
+                ],
+            "Targets": [
+                    {
+                        "Id": {
+                            "Ref": "EC2Instance"
+                        },
+                        "Port": 80
+                    }
+                ],
+                "Name": {
+                  "Fn::Sub": "${EC2InstanceName}-${ENV}-TG"
+                },
+                "Tags": [
+                  {
+                    "Key": "Name",
+                    "Value": {
+                      "Fn::Sub": "${EC2InstanceName}-${ENV}-TG"
+                    }
+                  }
+                ],
+                "Port": 80,
+                "Protocol": "HTTP",
+                "VpcId": {"Ref": "VPC"}
+                }
+
+            },
+
+
+
+    "LoadBalancerSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+	          "VpcId": {
+          "Ref": "VPC"
+        },
+        "GroupDescription" : "Load Balancer Security Group",
+		                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {"Fn::Sub":"${EC2InstanceName}-LoadBalancer-${ENV}-SG"}
+                    }
+					],
+
+
+        "SecurityGroupIngress" : [ {
+          "IpProtocol" : "tcp",
+          "FromPort" : "80",
+          "ToPort" : "80",
+          "CidrIp" : "0.0.0.0/0"
+        }		]
+      }
+    },
+
+
+    "InstanceSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+	          "VpcId": {
+          "Ref": "VPC"
+        },
+        "GroupDescription" : "Enable SSH access and HTTP access on the inbound port",
+		                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value":{"Fn::Sub":"${EC2InstanceName}-${ENV}-SG"}
+                    }
+					],
+
+        "SecurityGroupIngress" : [ {
+          "IpProtocol" : "tcp",
+          "FromPort" : "80",
+          "ToPort" : "80",
+          "SourceSecurityGroupId" : {"Ref":"LoadBalancerSecurityGroup"},
+		  		        "Description": {"Fn::Sub":"${EC2InstanceName}-${ENV}-SG"}
+		}		]
+      }
+    },
+
+
+ "BastionSshIngress1" : {
+        "Type" : "AWS::EC2::SecurityGroupIngress",
+        "Condition" : "SourceCidrSshIngress1",
+        "Properties" : {
+            "GroupId" : { "Ref" : "InstanceSecurityGroup" },
+            "CidrIp" : { "Fn::Select" : [ "0", { "Ref" : "SourceCidr" } ] },
+            "IpProtocol" : "tcp",
+            "FromPort" : "22",
+            "ToPort" : "22",
+					        "Description": {"Fn::Sub":"${EC2InstanceName}-${ENV}-SG"}
+        }
+    },
+    "BastionSshIngress2" : {
+        "Type" : "AWS::EC2::SecurityGroupIngress",
+        "Condition" : "SourceCidrSshIngress2",
+        "Properties" : {
+            "GroupId" : { "Ref" : "InstanceSecurityGroup" },
+            "CidrIp" : { "Fn::Select" : [ "1", { "Ref" : "SourceCidr" } ] },
+            "IpProtocol" : "tcp",
+            "FromPort" : "22",
+            "ToPort" : "22",
+					        "Description": {"Fn::Sub":"${EC2InstanceName}-${ENV}-SG"}
+        }
+    },
+    "BastionSshIngress3" : {
+        "Type" : "AWS::EC2::SecurityGroupIngress",
+        "Condition" : "SourceCidrSshIngress3",
+        "Properties" : {
+            "GroupId" : { "Ref" : "InstanceSecurityGroup" },
+            "CidrIp" : { "Fn::Select" : [ "2", { "Ref" : "SourceCidr" } ] },
+            "IpProtocol" : "tcp",
+            "FromPort" : "22",
+            "ToPort" : "22",
+					        "Description": {"Fn::Sub":"${EC2InstanceName}-${ENV}-SG"}
+        }
+    },
+    "BastionSshIngress4" : {
+        "Type" : "AWS::EC2::SecurityGroupIngress",
+        "Condition" : "SourceCidrSshIngress4",
+        "Properties" : {
+            "GroupId" : { "Ref" : "InstanceSecurityGroup" },
+            "CidrIp" : { "Fn::Select" : [ "3", { "Ref" : "SourceCidr" } ] },
+            "IpProtocol" : "tcp",
+            "FromPort" : "22",
+            "ToPort" : "22",
+					        "Description": {"Fn::Sub":"${EC2InstanceName}-${ENV}-SG"}
+        }
+    },
+    "BastionSshIngress5" : {
+        "Type" : "AWS::EC2::SecurityGroupIngress",
+        "Condition" : "SourceCidrSshIngress5",
+        "Properties" : {
+            "GroupId" : { "Ref" : "InstanceSecurityGroup" },
+            "CidrIp" : { "Fn::Select" : [ "4", { "Ref" : "SourceCidr" } ] },
+            "IpProtocol" : "tcp",
+            "FromPort" : "22",
+            "ToPort" : "22",
+					        "Description": {"Fn::Sub":"${EC2InstanceName}-${ENV}-SG"}
+        }
+    },
+
+
+        "LoadBalancer": {
+            "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties": {
+                "SecurityGroups": [
+
+                       {"Ref":"LoadBalancerSecurityGroup"}
+
+                ],
+
+                "LoadBalancerAttributes": [
+                    {
+                        "Key": "idle_timeout.timeout_seconds",
+                        "Value": "60"
+                    }
+
+
+                ],
+
+                "Subnets": {"Ref":"ALBSubnets"},
+                 "Name":  {"Fn::Sub":"${EC2InstanceName}-${ENV}-ALB"}
+            }
+        },
+
+        "HttpListener": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "DefaultActions": [
+                    {
+                        "TargetGroupArn": {
+                            "Ref": "DefaultTargetGroup"
+                        },
+                        "Type": "forward"
+                    }
+                ],
+                "LoadBalancerArn": {
+                    "Ref": "LoadBalancer"
+                },
+                "Port": 80,
+                "Protocol": "HTTP"
+            }
+        }
+
+
+  },
+  "Outputs": {
+
+      "URL" : {
+      "Description" : "URL of the sample website",
+      "Value" :  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "LoadBalancer", "DNSName" ]}]]}
+    },
+
+
+    "EC2Instance": {
+      "Description": "InstanceId of the newly created EC2 Web instance",
+      "Value": {
+        "Ref": "EC2Instance"
+      }
+    },
+
+    "InstanceName":{
+	 "Description": "Instance name used",
+	 "Value":{
+	 "Ref":"EC2InstanceName"
+	}
+	}
+
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+"ParameterGroups": [
+        {
+          "Label": {
+            "default": " Load Balancing Configuration"
+          },
+          "Parameters": [
+            "ALBSubnets",
+            "VPC"
+
+          ]
+        },
+		        {
+          "Label": {
+            "default": "Ec2 Configuration"
+          },
+          "Parameters": [
+            "EC2InstanceName",
+			"EC2LatestAmiId",
+			"InstanceType",
+			"AZ",
+			"AZone",
+			"myEC2Subnets",
+			"KeyPair"
+          ]
+        }
+
+
+
+      ],
+      "ParameterLabels": {
+	    "EC2LatestAmiId": {
+          "default": "Latest Existing AMI"
+        },
+
+        "ALBSubnets": {
+          "default": "ALB Subnet"
+        },
+        "VPC": {
+          "default": "Existing VPC"
+        },
+        "AZ": {
+          "default": "Availability Zone"
+        },
+        "AZone": {
+          "default": "Availability Zone Tag"
+        },
+		"KeyPair": {
+          "default": "Key Pair for EC2"
+        },
+		"myEC2Subnets": {
+          "default": "Subnet for EC2"
+        },
+		"EC2InstanceName": {
+          "default": "Instance Name"
+        },
+		"InstanceType": {
+          "default": "Instance Type"
+      }
+    }
+  }
+  }
+}

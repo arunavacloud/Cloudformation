@@ -1,0 +1,573 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "This template installs WordPress with a local MySQL database for storage made by Workmates",
+  "Parameters": {
+    "Ec2Instance": {
+      "Description": "Client name",
+      "Type": "String"
+    },
+    "KeyName": {
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    },
+    "Subnet": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud."
+    },
+    "VPC": {
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "InstanceType": {
+      "Description": "WebServer EC2 instance type",
+      "Type": "String",
+      "Default": "t3.small",
+      "AllowedValues": [
+        "t3.micro",
+        "t3.nano",
+        "t3.micro",
+        "t3.small",
+        "t3.medium",
+        "t3.large",
+        "t3.xlarge"
+
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+    },
+    "DBName": {
+      "Default": "wordpressdb",
+      "Description": "The WordPress database name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+    },
+    "DBUser": {
+      "NoEcho": "true",
+      "Description": "The WordPress database admin account username",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "16",
+      "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+    },
+    "DBPassword": {
+      "NoEcho": "true",
+      "Description": "The WordPress database admin account password",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern": "[a-zA-Z0-9]*",
+      "ConstraintDescription": "must contain only alphanumeric characters."
+    },
+    "Azone": {
+      "Description": "WebServer EC2 instance type",
+      "Type": "String",
+      "Default": "1a",
+      "AllowedValues": [
+        "1a",
+        "1b",
+        "1c"
+
+      ]
+    }
+
+  },
+  "Mappings": {
+    "AWSRegionArch2AMI": {
+      "us-east-1": {
+        "AMAZONLINUXAMI": "ami-b70554c8"
+      },
+      "us-east-2": {
+        "AMAZONLINUXAMI": "ami-8c122be9"
+      },
+      "us-west-1": {
+        "AMAZONLINUXAMI": "ami-e0ba5c83"
+      },
+      "us-west-2": {
+        "AMAZONLINUXAMI": "ami-a9d09ed1"
+      },
+      "ca-central-1": {
+        "AMAZONLINUXAMI": "ami-0ee86a6a"
+      },
+      "eu-west-1": {
+        "AMAZONLINUXAMI": "ami-466768ac"
+      },
+      "eu-central-1": {
+        "AMAZONLINUXAMI": "ami-7c4f7097"
+      },
+      "eu-west-2": {
+        "AMAZONLINUXAMI": "ami-b8b45ddf"
+      },
+      "ap-southeast-1": {
+        "AMAZONLINUXAMI": "ami-05868579"
+      },
+      "ap-southeast-2": {
+        "AMAZONLINUXAMI": "ami-39f8215b"
+      },
+      "ap-northeast-2": {
+        "AMAZONLINUXAMI": "ami-afd86dc1"
+      },
+      "ap-northeast-1": {
+        "AMAZONLINUXAMI": "ami-e99f4896"
+      },
+      "ap-south-1": {
+        "AMAZONLINUXAMI": "ami-d783a9b8"
+      },
+      "sa-east-1": {
+        "AMAZONLINUXAMI": "ami-6dca9001"
+      }
+    }
+  },
+  "Resources": {
+    "WebServerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "GroupDescription": "Security Group created with CFN",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "443",
+            "ToPort": "443",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "2223",
+            "ToPort": "2223",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "Ec2Instance"
+                  },
+                  "WP-Server-SG"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "WebServer": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "configSets": {
+            "wordpress_install": [
+              "install_cfn",
+              "install_epel_mysql_update",
+              "install_php",
+              "install_httpd",
+              "configure_wordpress"
+            ]
+          },
+          "install_cfn": {
+            "files": {
+              "/etc/cfn/cfn-hup.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[main]\n",
+                      "stack=",
+                      {
+                        "Ref": "AWS::StackId"
+                      },
+                      "\n",
+                      "region=",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              },
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[cfn-auto-reloader-hook]\n",
+                      "triggers=post.update\n",
+                      "path=Resources.WebServer.Metadata.AWS::CloudFormation::Init\n",
+                      "action=/opt/aws/bin/cfn-init -v ",
+                      "         --stack ",
+                      {
+                        "Ref": "AWS::StackName"
+                      },
+                      "         --resource WebServer ",
+                      "         --configsets wordpress_install ",
+                      "         --region ",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n"
+                    ]
+                  ]
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              }
+            },
+            "services": {
+              "sysvinit": {
+                "cfn-hup": {
+                  "enabled": "true",
+                  "ensureRunning": "true",
+                  "files": [
+                    "/etc/cfn/cfn-hup.conf",
+                    "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+                  ]
+                }
+              }
+            }
+          },
+          "install_epel_mysql_update": {
+            "commands": {
+              "01_install_server_update": {
+                "command": "sudo yum update -y"
+              },
+              "02_install_mysql8": {
+                "command": "sudo yum install sudo wget https://dev.mysql.com/get/mysql57-community-release-el7-11.noarch.rpm -y"
+              },
+              "03_repolist": {
+                "command": "sudo yum repolist"
+              },
+              "04_install_epel": {
+                "command": "sudo amazon-linux-extras install epel -y"
+              },
+              "05_install_mysql_server": {
+                "command": "sudo yum install mysql-community-server -y"
+              },
+              "06_enable_mysql": {
+                "command": "sudo systemctl enable --now mysqld"
+              },
+              "07_restart_mysql": {
+                "command": "sudo service mysqld restart"
+              }
+            }
+          },
+          "install_php": {
+            "commands": {
+              "01_enable_php7.3": {
+                "command": "sudo amazon-linux-extras enable php7.3"
+              },
+              "02_clean_metadata": {
+                "command": "sudo yum clean metadata"
+              },
+              "03_install_php": {
+                "command": "sudo yum install php php-common php-pear -y"
+              },
+              "04_install_php_modules": {
+                "command": "sudo yum install php-{cgi,curl,mbstring,gd,mysqlnd,gettext,json,xml,intl,zip} -y"
+              }
+            }
+          },
+          "install_httpd": {
+            "packages": {
+              "yum": {
+                "httpd": []
+              }
+            },
+            "sources": {
+              "/var/www/html": "http://wordpress.org/latest.tar.gz"
+            },
+            "files": {
+              "/tmp/setup.mysql": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "CREATE DATABASE ",
+                      {
+                        "Ref": "DBName"
+                      },
+                      ";\n",
+                      "CREATE USER '",
+                      {
+                        "Ref": "DBUser"
+                      },
+                      "'@'localhost' IDENTIFIED BY '",
+                      {
+                        "Ref": "DBPassword"
+                      },
+                      "';\n",
+                      "GRANT ALL ON ",
+                      {
+                        "Ref": "DBName"
+                      },
+                      ".* TO '",
+                      {
+                        "Ref": "DBUser"
+                      },
+                      "'@'localhost';\n",
+                      "FLUSH PRIVILEGES;\n"
+                    ]
+                  ]
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              },
+              "/tmp/create-wp-config": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "#!/bin/bash -xe\n",
+                      "cp /var/www/html/wp-config-sample.php /var/www/html/wp-config.php\n",
+                      "sed -i \"s/'database_name_here'/'",
+                      {
+                        "Ref": "DBName"
+                      },
+                      "'/g\" /var/www/html/wp-config.php\n",
+                      "sed -i \"s/'username_here'/'",
+                      {
+                        "Ref": "DBUser"
+                      },
+                      "'/g\" /var/www/html/wp-config.php\n",
+                      "sed -i \"s/'password_here'/'",
+                      {
+                        "Ref": "DBPassword"
+                      },
+                      "'/g\" /var/www/html/wp-config.php\n"
+                    ]
+                  ]
+                },
+                "mode": "000500",
+                "owner": "root",
+                "group": "root"
+              }
+            },
+            "services": {
+              "sysvinit": {
+                "httpd": {
+                  "enabled": "true",
+                  "ensureRunning": "true"
+                }
+              }
+            }
+          },
+          "configure_wordpress": {
+            "commands": {
+              "01_move_files": {
+                  "command": "mv /var/www/html/wordpress/* /var/www/html/"
+              },
+              "02_allow": {
+                  "command": "sed -i '151s/None/All/' /etc/httpd/conf/httpd.conf"
+              },
+              "03_permission": {
+                  "command": "chown -R apache:apache /var/www/html"
+              }
+
+            }
+          }
+        }
+      },
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AWSRegionArch2AMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            "AMAZONLINUXAMI"
+          ]
+        },
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+              "VolumeType": "gp3",
+              "DeleteOnTermination": "true",
+              "VolumeSize": "10"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${Ec2Instance}-WP-${Azone}"
+            }
+          }
+        ],
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "SubnetId": {
+          "Ref": "Subnet"
+        },
+        "SecurityGroupIds": [
+          {
+            "Ref": "WebServerSecurityGroup"
+          }
+        ],
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash -xe\n",
+                "yum update -y aws-cfn-bootstrap\n",
+                "/opt/aws/bin/cfn-init -v ",
+                "         --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                "         --resource WebServer ",
+                "         --configsets wordpress_install ",
+                "         --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n",
+                "/opt/aws/bin/cfn-signal -e $? ",
+                "         --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                "         --resource WebServer ",
+                "         --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n"
+              ]
+            ]
+          }
+        }
+      },
+      "CreationPolicy": {
+        "ResourceSignal": {
+          "Timeout": "PT15M"
+        }
+      }
+    },
+    "IPAddress": {
+      "Type": "AWS::EC2::EIP",
+      "Properties" : {
+      "Tags": [
+        {
+          "Key": "Name",
+          "Value": {
+            "Fn::Sub": "${Ec2Instance}-WP-${Azone}"
+          }
+        }
+      ]
+    }
+  },
+    "IPAssoc": {
+      "Type": "AWS::EC2::EIPAssociation",
+      "Properties": {
+        "InstanceId": {
+          "Ref": "WebServer"
+        },
+        "EIP": {
+          "Ref": "IPAddress"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "WebsiteURL": {
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            {
+              "Fn::GetAtt": [
+                "WebServer",
+                "PublicDnsName"
+              ]
+            },
+            "/wp-admin"
+          ]
+        ]
+      },
+      "Description": "WordPress Website"
+    },
+    "01StepMysqlPwd": {
+      "Description": "Get MYSQL root password",
+      "Value":  "sudo grep 'temporary password' /var/log/mysqld.log"
+
+    },
+    "02StepSetSecurePassword": {
+      "Description": "Setup Secure Password",
+      "Value":  "mysql_secure_installation"
+
+    },
+    "03CreateUser": {
+      "Description": "Run this command after login to Mysql",
+      "Value": {
+         "Fn::Sub": "CREATE USER '${DBUser}'@'localhost' IDENTIFIED BY '${DBPassword}';"
+      }
+    },
+    "04CreateDB": {
+      "Description": "Run this command after user created",
+      "Value": {
+         "Fn::Sub": "create database ${DBName};"
+      }
+    },
+    "05GrantPermission": {
+      "Description": "Run this command after DB Name is created",
+      "Value": {
+         "Fn::Sub": "GRANT ALL ON ${DBName}.* TO '${DBUser}'@'localhost';"
+      }
+    },
+    "06Alter": {
+      "Description": "Run this command after all PRIVILEGES is granted",
+      "Value": {
+         "Fn::Sub": "ALTER USER '${DBUser}'@'localhost' IDENTIFIED WITH mysql_native_password BY '${DBPassword}';"
+      }
+    },
+
+    "07Flush": {
+      "Description": "Run this command to flush privileges",
+      "Value": {
+         "Fn::Sub": "FLUSH PRIVILEGES;"
+      }
+    }   ,
+
+    "08UPDATEDBDetails": {
+      "Description": "Run this command once DB is configured",
+      "Value": "/tmp/create-wp-config"
+
+    }
+
+  }
+}

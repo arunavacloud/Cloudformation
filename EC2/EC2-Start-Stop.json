@@ -1,0 +1,211 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "This Template create lambda function to start and stop EC2 instances",
+    "Parameters": {
+  "Project": {
+      "Description": "Enter Project Value (The Project Value should be same as EC2 Project Key)",
+      "Type": "String",
+      "Default": "Workmates"
+  },
+  "SNSARN": {
+      "Description": "Enter SNS ARN",
+      "Type": "String",
+      "Default": "arn:aws:sns:ap-south-1:1234567890:example"
+  }
+},
+  "Resources": {
+    "LambdaFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "LambdaFunctionPolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ec2:CopySnapshot",
+                    "ec2:DeregisterImage",
+                    "ec2:DeleteSnapshot",
+                    "ec2:DeleteTags",
+                    "ec2:CreateTags",
+                    "ec2:ResetSnapshotAttribute",
+                    "ec2:CreateImage",
+                    "ec2:CopyImage",
+                    "ec2:StopInstances",
+                    "logs:CreateLogGroup",
+                    "logs:PutLogEvents",
+                    "logs:CreateLogStream",
+                    "ec2:Describe*",
+                    "ec2:StartInstances",
+                    "ec2:CreateSnapshots",
+                    "ec2:CreateSnapshot",
+                    "sns:publish"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "LambdaFunctionEC2Start": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "EC2InstanceStart",
+        "Runtime": "python3.6",
+        "Timeout": 900,
+        "Handler": "index.lambda_handler",
+        "Environment": {
+          "Variables": {
+              "Project": { "Ref": "Project" },
+              "snsTopicArn": { "Ref": "SNSARN" }
+                }
+                },
+        "Role": {
+          "Fn::GetAtt": [
+            "LambdaFunctionRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "",
+              [
+                "#python 3.6\r\n\r\nfrom os import environ\r\nimport boto3\r\n\r\ndef lambda_handler(event, context):\r\n\t\r\n\tsnsTopic = environ['snsTopicArn']\r\n\tproject = environ['Project']\r\n\tec2 = boto3.client('ec2', region_name='ap-south-1')\r\n\treservations = ec2.describe_instances(Filters=[{'Name': 'tag:wm-AutoStartStop', 'Values': ['yes']}]).get('Reservations', [])\r\n\townerId = reservations[0]['OwnerId']\r\n\tinstances = sum([[i for i in r['Instances']] for r in reservations], [])\r\n\tcount = 0\r\n\tfor instance in instances:\r\n\t\tcount += 1\r\n\t\tinstance_id = instance['InstanceId']\r\n\t\tpreviousStatus = instance['State']['Name']\r\n\t\tprivateIP = instance['PrivateIpAddress']\r\n\t\taz = instance['Placement']['AvailabilityZone']\r\n\t\taction = ec2.start_instances(InstanceIds=[instance_id])\r\n\t\twaiter=ec2.get_waiter('instance_running')\r\n\t\twaiter.wait(InstanceIds=[instance_id])\r\n\t\tfor tags in instance['Tags']:\r\n\t\t\tif 'Name' in tags['Key']:\r\n\t\t\t\tinstanceName = tags['Value']\r\n\t\t\t\t\r\n\t\tec2client = boto3.resource('ec2',region_name='ap-south-1')\r\n\t\tcurrentStatus = ec2client.Instance(instance_id).state['Name']\r\n\t\taction_time = action['ResponseMetadata']['HTTPHeaders']['date']\r\n\t\tif previousStatus == currentStatus:\r\n\t\t\tsnsclient = boto3.client('sns')\r\n\t\t\t## publish output to SNS\r\n\t\t\tsubject = 'Failed ! Auto instance start of \"' + str(instanceName) + '\" | '  + str(project)\r\n\t\t\tbody = \"\"\" \t\r\n\t\t\t\tThis email is to notify you regarding instance AutoStartStop schedule.\r\n\t\t\t\tAWS Account ID : {}\r\n\t\t\t\tAWS AvailabilityZone :  {}\r\n\t\t\t\tInstance-Id :  {}\r\n\t\t\t\tInstance-Name :  {}\r\n\t\t\t\tCurrent state :  {}\r\n\t\t\t\tAction Time : {}\r\n\t\t\t\"\"\".format(ownerId,az,instance_id,instanceName,currentStatus,action_time)\r\n\t\t\tsns_response = snsclient.publish(\r\n\t\t\t\tTopicArn=snsTopic,\r\n\t\t\t\tMessage=body,\r\n\t\t\t\tSubject=subject\r\n\t\t\t\t)\r\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "LambdaFunctionEC2Stop": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "EC2InstanceStop",
+        "Runtime": "python3.6",
+        "Timeout": 5,
+        "Handler": "index.lambda_handler",
+        "Environment": {
+          "Variables": {
+              "Project": { "Ref": "Project" },
+              "snsTopicArn": { "Ref": "SNSARN" }
+                }
+                },
+        "Role": {
+          "Fn::GetAtt": [
+            "LambdaFunctionRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "",
+              [
+                "#python 3.6\r\n\r\nfrom os import environ\r\nimport boto3\r\n\r\ndef lambda_handler(event, context):\r\n\t\r\n\tsnsTopic = environ['snsTopicArn']\r\n\tproject = environ['Project']\r\n\tec2 = boto3.client('ec2', region_name='ap-south-1')\r\n\treservations = ec2.describe_instances(Filters=[{'Name': 'tag:wm-AutoStartStop', 'Values': ['yes']}]).get('Reservations', [])\r\n\townerId = reservations[0]['OwnerId']\r\n\tinstances = sum([[i for i in r['Instances']] for r in reservations], [])\r\n\tcount = 0\r\n\tfor instance in instances:\r\n\t\tcount += 1\r\n\t\tinstance_id = instance['InstanceId']\r\n\t\tpreviousStatus = instance['State']['Name']\r\n\t\tprivateIP = instance['PrivateIpAddress']\r\n\t\taz = instance['Placement']['AvailabilityZone']\r\n\t\taction = ec2.stop_instances(InstanceIds=[instance_id])\r\n\t\twaiter=ec2.get_waiter('instance_stopped')\r\n\t\twaiter.wait(InstanceIds=[instance_id])\r\n\t\tfor tags in instance['Tags']:\r\n\t\t\tif 'Name' in tags['Key']:\r\n\t\t\t\tinstanceName = tags['Value']\r\n\t\t\t\t\r\n\t\tec2client = boto3.resource('ec2',region_name='ap-south-1')\r\n\t\tcurrentStatus = ec2client.Instance(instance_id).state['Name']\r\n\t\taction_time = action['ResponseMetadata']['HTTPHeaders']['date']\r\n\t\tif previousStatus == currentStatus:\r\n\t\t\tsnsclient = boto3.client('sns')\r\n\t\t\t## publish output to SNS\r\n\t\t\tsubject = 'Failed ! Auto instance start of \"' + str(instanceName) + '\" | '  + str(project)\r\n\t\t\tbody = \"\"\" \t\r\n\t\t\t\tThis email is to notify you regarding instance AutoStartStop schedule.\r\n\t\t\t\tAWS Account ID : {}\r\n\t\t\t\tAWS AvailabilityZone :  {}\r\n\t\t\t\tInstance-Id :  {}\r\n\t\t\t\tInstance-Name :  {}\r\n\t\t\t\tCurrent state :  {}\r\n\t\t\t\tAction Time : {}\r\n\t\t\t\"\"\".format(ownerId,az,instance_id,instanceName,currentStatus,action_time)\r\n\t\t\tsns_response = snsclient.publish(\r\n\t\t\t\tTopicArn=snsTopic,\r\n\t\t\t\tMessage=body,\r\n\t\t\t\tSubject=subject\r\n\t\t\t\t)"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "RuleStartEC2": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Name" :"WM-EC2InstanceStart-Rule",
+        "ScheduleExpression": "cron(30 04 ? * MON-SUN *)",
+        "State":"DISABLED",
+        "Targets": [
+          {
+            "Id": "EC2InstanceStart",
+            "Arn": {
+              "Fn::GetAtt": [
+                "LambdaFunctionEC2Start",
+                "Arn"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "InvokeLambdaPermissionStart": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "LambdaFunctionEC2Start",
+            "Arn"
+          ]
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "RuleStartEC2",
+            "Arn"
+          ]
+        }
+      }
+    },
+    "RuleStopEC2": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Name" :"WM-EC2InstanceStop-Rule",
+        "ScheduleExpression": "cron(30 13 ? * MON-SUN *)",
+        "State":"DISABLED",
+        "Targets": [
+          {
+            "Id": "EC2InstanceStop",
+            "Arn": {
+              "Fn::GetAtt": [
+                "LambdaFunctionEC2Stop",
+                "Arn"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "InvokeLambdaPermissionStop": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "LambdaFunctionEC2Stop",
+            "Arn"
+          ]
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "RuleStopEC2",
+            "Arn"
+          ]
+        }
+      }
+    }
+  }
+}

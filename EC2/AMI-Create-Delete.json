@@ -1,0 +1,185 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Cloud Formation wiil create script which search for all instances having a tag named \"wm_backup\" with a value of \"yes\".",
+  "Resources": {
+    "LambdaFunctionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "LambdaFunctionPolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ec2:CopySnapshot",
+                    "ec2:DeregisterImage",
+                    "ec2:DeleteSnapshot",
+                    "ec2:DeleteTags",
+                    "ec2:CreateTags",
+                    "ec2:ResetSnapshotAttribute",
+                    "ec2:CreateImage",
+                    "ec2:CopyImage",
+                    "ec2:StopInstances",
+                    "logs:CreateLogGroup",
+                    "logs:PutLogEvents",
+                    "logs:CreateLogStream",
+                    "ec2:Describe*",
+                    "ec2:StartInstances",
+                    "ec2:CreateSnapshots",
+                    "ec2:CreateSnapshot",
+                    "sns:publish"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "LambdaFunctionCreate": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "wmAMIbackup",
+        "Runtime": "python3.6",
+        "Timeout": 900,
+        "Handler": "index.lambda_handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "LambdaFunctionRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "",
+              [
+                "import boto3\r\nimport collections\r\nimport datetime\r\nimport sys\r\nimport pprint\r\n\r\nec = boto3.client('ec2')\r\n\r\n\r\ndef lambda_handler(event, context):\r\n\r\n    reservations = ec.describe_instances(Filters=[\r\n        {\r\n            'Name': 'tag:wm_backup',\r\n            'Values': ['yes']\r\n        },\r\n    ]).get('Reservations', [])\r\n\r\n    instances = sum([[i for i in r['Instances']] for r in reservations], [])\r\n\r\n    print(\"Found %d instances that need backing up\" % len(instances))\r\n\r\n    to_tag = collections.defaultdict(list)\r\n\r\n    for instance in instances:\r\n        try:\r\n            retention_days = [\r\n                int(t.get('Value')) for t in instance['Tags']\r\n                if t['Key'] == 'wm_rdays'\r\n            ][0]\r\n            instance_name = [\r\n                i.get('Value') for i in instance['Tags']\r\n                if i['Key'] == 'Name'\r\n            ][0]\r\n        except IndexError:\r\n            retention_days = 7\r\n        \r\n        \r\n        create_time = datetime.datetime.now()\r\n        create_fmt = create_time.strftime('%Y-%m-%d')\r\n\r\n        AMIid = ec.create_image(\r\n            InstanceId=instance['InstanceId'],\r\n            Name=\"Lambda - \" + instance_name + \"(\" + instance['InstanceId'] + \")\" + create_fmt,\r\n            Description=\"Lambda created AMI of instance \" + instance['InstanceId'] + \" from \" + create_fmt,\r\n            NoReboot=True,\r\n            DryRun=False)\r\n\r\n        pprint.pprint(instance)\r\n            \r\n        to_tag[retention_days].append(AMIid['ImageId'])\r\n\r\n        print(\"Retaining AMI %s of instance %s for %d days\" % (\r\n            AMIid['ImageId'],\r\n            instance['InstanceId'],\r\n            retention_days,\r\n        ))\r\n\r\n    print(to_tag.keys())\r\n\r\n    for retention_days in to_tag.keys():\r\n        delete_date = datetime.date.today() + datetime.timedelta(\r\n            days=retention_days)\r\n        delete_fmt = delete_date.strftime('%m-%d-%Y')\r\n        print(\"Will delete %d AMIs on %s\" %\r\n              (len(to_tag[retention_days]), delete_fmt))\r\n\r\n        #break\r\n\r\n        ec.create_tags(Resources=to_tag[retention_days],\r\n                       Tags=[\r\n                           {\r\n                               'Key': 'DeleteOn',\r\n                               'Value': delete_fmt\r\n                           },\r\n                       ])"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "LambdaFunctionClean": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "wmAMIcleanup",
+        "Runtime": "python3.6",
+        "Timeout": 5,
+        "Handler": "index.lambda_handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "LambdaFunctionRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "",
+              [
+                "import boto3\r\nimport collections\r\nimport datetime\r\nimport time\r\nimport sys\r\n\r\nregion_id = 'ap-south-1'\r\nec = boto3.client('ec2', region_id)\r\nec2 = boto3.resource('ec2', region_id)\r\nimages = ec2.images.filter(Owners=[\"self\"])\r\n\r\n\r\ndef lambda_handler(event, context):\r\n\r\n    reservations = ec.describe_instances(Filters=[\r\n        {\r\n            'Name': 'tag:wm_backup',\r\n            'Values': ['yes']\r\n        },\r\n    ]).get('Reservations', [])\r\n\r\n    instances = sum([[i for i in r['Instances']] for r in reservations], [])\r\n\r\n    print(\"Found %d instances that need evaluated\" % len(instances))\r\n\r\n    to_tag = collections.defaultdict(list)\r\n\r\n    date = datetime.datetime.now()\r\n    date_fmt = date.strftime('%Y-%m-%d')\r\n\r\n    imagesList = []\r\n\r\n    # Set to true once we confirm we have a backup taken today\r\n    backupSuccess = False\r\n\r\n    # Loop through all of our instances with a tag named \"Backup\"\r\n    for instance in instances:\r\n        imagecount = 0\r\n        for tags in instance['Tags']:\r\n            if 'Name' in tags['Key']:\r\n                instanceName = tags['Value']\r\n                \r\n        # Loop through each image of our current instance\r\n        for image in images:\r\n\r\n            # Our other Lambda Function names its AMIs Lambda - instanceName(i-instancenumber)-yyyy-mm-dd.\r\n            # We now know these images are auto created\r\n            if image.name.startswith('Lambda - ' + instanceName + '(' + instance['InstanceId']):\r\n\r\n                # print \"FOUND IMAGE \" + image.id + \" FOR INSTANCE \" + instance['InstanceId']\r\n\r\n                # Count this image's occcurance\r\n                imagecount = imagecount + 1\r\n                \r\n                try:\r\n                    if image.tags is not None:\r\n                        deletion_date = [\r\n                            t.get('Value') for t in image.tags\r\n                            if t['Key'] == 'DeleteOn'\r\n                        ][0]\r\n                        delete_date = time.strptime(deletion_date, \"%m-%d-%Y\")\r\n                except IndexError:\r\n                    deletion_date = False\r\n                    delete_date = False\r\n\r\n                today_time = datetime.datetime.now().strftime('%m-%d-%Y')\r\n                # today_fmt = today_time.strftime('%m-%d-%Y')\r\n                today_date = time.strptime(today_time, '%m-%d-%Y')\r\n\r\n                # If image's DeleteOn date is less than or equal to today,\r\n                # add this image to our list of images to process later\r\n                if delete_date <= today_date:\r\n                    imagesList.append(image.id)\r\n\r\n                # Make sure we have an AMI from today and mark backupSuccess as true\r\n                if image.name.endswith(date_fmt):\r\n                    # Our latest backup from our other Lambda Function succeeded\r\n                    backupSuccess = True\r\n                    print(\"Latest backup from \" + date_fmt + \" of \" + instance['InstanceId'] + \" was a success\")\r\n\r\n        print(\"instance \" + instance['InstanceId'] + \" has \" + str(imagecount) + \" AMIs\")\r\n\r\n    print(\"=============\")\r\n\r\n    print(\"About to process the following AMIs:\")\r\n    print(imagesList)\r\n\r\n    if backupSuccess == True:\r\n\r\n        myAccount = boto3.client('sts').get_caller_identity()['Account']\r\n        snapshots = ec.describe_snapshots(MaxResults=1000,\r\n                                          OwnerIds=[myAccount])['Snapshots']\r\n\r\n        # loop through list of image IDs\r\n        for image in imagesList:\r\n            print(\"deregistering image %s\" % image)\r\n            amiResponse = ec.deregister_image(\r\n                DryRun=False,\r\n                ImageId=image,\r\n            )\r\n\r\n            for snapshot in snapshots:\r\n                if snapshot['Description'].find(image) > 0:\r\n                    snap = ec.delete_snapshot(\r\n                        SnapshotId=snapshot['SnapshotId'])\r\n                    print(\"Deleting snapshot \" + snapshot['SnapshotId'])\r\n                    print(\"-------------\")\r\n\r\n    else:\r\n        print(\"No current backup found. Termination suspended.\")"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "RuleCreateAMI": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Name" :"WM-CreateAMI-Rule",
+        "ScheduleExpression": "cron(30 18 ? * FRI *)",
+        "Targets": [
+          {
+            "Id": "CreateAMIScheduler",
+            "Arn": {
+              "Fn::GetAtt": [
+                "LambdaFunctionCreate",
+                "Arn"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "InvokeLambdaPermissionCreate": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "LambdaFunctionCreate",
+            "Arn"
+          ]
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "RuleCreateAMI",
+            "Arn"
+          ]
+        }
+      }
+    },
+    "RuleDeleteAMI": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Name" :"WM-DeleteAMI-Rule",
+        "ScheduleExpression": "cron(00 19 ? * * *)",
+        "Targets": [
+          {
+            "Id": "DeleteAMIScheduler",
+            "Arn": {
+              "Fn::GetAtt": [
+                "LambdaFunctionClean",
+                "Arn"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "InvokeLambdaPermissionDelete": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "LambdaFunctionClean",
+            "Arn"
+          ]
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "RuleDeleteAMI",
+            "Arn"
+          ]
+        }
+      }
+    }
+  }
+}
