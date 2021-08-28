@@ -1,0 +1,142 @@
+{
+  "Parameters": {
+    "AliasName": {
+      "Type": "String",
+      "Description": "The shortname of the account in which these KMS keys are being deployed."
+    },
+    "KeyAdminRoleArn": {
+      "Type": "String",
+      "Description": "The IAM role to which to give key administrator access."
+    },
+    "DataIntegratorRoleArn": {
+      "Type": "String",
+      "Description": "The IAM role to give limited key usage permissions."
+    }
+  },
+  "Resources": {
+    "MyAirKey": {
+      "Type": "AWS::KMS::Key",
+      "Properties": {
+        "Description": {
+          "Fn::Sub": "${AliasName} all resources KMS key using CFN"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${AliasName}-kms-key"
+            }
+          },
+          {
+            "Key": "Managedby",
+            "Value": "Workmates"
+          },
+          {
+            "Key": "Project",
+            "Value": {
+              "Ref": "AliasName"
+            }
+          },
+          {
+            "Key": "Env",
+            "Value": "Prod"
+          }
+        ],
+        "EnableKeyRotation": true,
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "Enable IAM user permissions",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Ref": "AWS::AccountId"
+                }
+              },
+              "Action": [
+                "kms:*"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "Allow key administrator access",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Ref": "KeyAdminRoleArn"
+                }
+              },
+              "Action": [
+                "kms:Create*",
+                "kms:Describe*",
+                "kms:Enable*",
+                "kms:List*",
+                "kms:Put*",
+                "kms:Update*",
+                "kms:Revoke*",
+                "kms:Disable*",
+                "kms:Get*",
+                "kms:Delete*",
+                "kms:TagResource",
+                "kms:UntagResource",
+                "kms:ScheduleKeyDeletion",
+                "kms:CancelKeyDeletion"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "Basic key usage",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Ref": "DataIntegratorRoleArn",
+				  "Ref": "KeyAdminRoleArn"
+                }
+              },
+              "Action": [
+                "kms:Encrypt",
+                "kms:Decrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*",
+                "kms:DescribeKey"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "Allow attachment of persistent resources",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Ref": "DataIntegratorRoleArn"
+                }
+              },
+              "Action": [
+                "kms:CreateGrant",
+                "kms:ListGrants",
+                "kms:RevokeGrant"
+              ],
+              "Resource": "*",
+              "Condition": {
+                "Bool": {
+                  "kms:GrantIsForAWSResource": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "MyAirKeyAlias": {
+      "Type": "AWS::KMS::Alias",
+      "Properties": {
+        "AliasName": {
+          "Fn::Sub": "alias/${AliasName}"
+        },
+        "TargetKeyId": {
+          "Ref": "MyAirKey"
+        }
+      }
+    }
+  }
+}

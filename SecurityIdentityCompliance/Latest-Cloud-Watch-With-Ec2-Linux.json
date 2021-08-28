@@ -1,0 +1,513 @@
+{
+  "Parameters": {
+    "VPCID": {
+      "Description": "VPC to launch virtual server in",
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "EC2Subnets": {
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "The list of SubnetIds in your Virtual Private Cloud (VPC)",
+      "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud.",
+      "Default": "subnet-089a0e856eb25ffe3"
+    },
+    "SSHKey": {
+      "Type": "AWS::EC2::KeyPair::KeyName"
+    },
+    "Alarmdesc": {
+      "Description": "Please enter your name",
+      "Type": "String",
+      "Default": "WorkMates"
+    },
+    "CpuThreshold": {
+      "Description": "Please enter CPU Threshold",
+      "Type": "Number",
+      "MaxValue": 100,
+      "Default": "75"
+    },
+    "MemoryThreshold": {
+      "Description": "Please enter Memory Threshold",
+      "Type": "Number",
+      "MaxValue": 100,
+      "Default": "75"
+    },
+    "DiskThreshold": {
+      "Description": "Please enter Disk Threshold",
+      "Type": "Number",
+      "MaxValue": 100,
+      "Default": "85"
+    },
+    "namealarmcpu": {
+      "Description": "Please enter the Alarm name as Workmates-Prod-Web",
+      "Type": "String",
+      "Default": "Workmates-Prod-Web"
+    },
+    "EmailId": {
+      "Description": "Please enter the email ID for subscription ex. xyz@gmail.com",
+      "Type": "String",
+      "Default": "info@cloudworkmates.com"
+    },
+    "volume": {
+      "Description": "Provide disk's/folder's name (ex.: xvda1)",
+      "Type": "String",
+      "Default": "xvda1"
+    },
+    "fstype": {
+      "Description": "Choose fstype - ext4 or xfs",
+      "Type": "String",
+      "Default": "xfs",
+      "AllowedValues": [
+        "ext4",
+        "xfs",
+        "btrfs"
+      ],
+      "ConstraintDescription": "You must specify ext4,xfs,or btrfs."
+    }
+  },
+  "Mappings": {
+    "RegionMap": {
+      "eu-west-1": {
+        "HVM64": "ami-030dbca661d402413"
+      },
+      "eu-west-2": {
+        "HVM64": "ami-0009a33f033d8b7b6"
+      },
+      "eu-west-3": {
+        "HVM64": "ami-0ebb3a801d5fb8b9b"
+      },
+      "eu-central-1": {
+        "HVM64": "ami-0ebe657bc328d4e82"
+      },
+      "us-west-2": {
+        "HVM64": "ami-05348ee4dc634ca1c"
+      },
+      "us-west-1": {
+        "HVM64": "ami-015954d5e5548d13b"
+      },
+      "us-east-2": {
+        "HVM64": "ami-0cb72367e98845d43"
+      },
+      "us-east-1": {
+        "HVM64": "ami-0c6b1d09930fac512"
+      },
+      "ap-south-1": {
+        "HVM64": "ami-00e782930f1c3dbc7"
+      },
+      "ap-northeast-2": {
+        "HVM64": "ami-08ab3f7e72215fe91"
+      },
+      "ap-northeast-1": {
+        "HVM64": "ami-00d101850e971728d"
+      },
+      "ap-southeast-2": {
+        "HVM64": "ami-0fb7513bcdc525c3b"
+      },
+      "ap-southeast-1": {
+        "HVM64": "ami-0b5a47f8865280111"
+      },
+      "ca-central-1": {
+        "HVM64": "ami-08a9b721ecc5b0a53"
+      },
+      "sa-east-1": {
+        "HVM64": "ami-058141e091292ecf0"
+      }
+    }
+  },
+  "Resources": {
+    "InstanceEC2": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [
+            "RegionMap",
+            {
+              "Ref": "AWS::Region"
+            },
+            "HVM64"
+          ]
+        },
+        "BlockDeviceMappings" : [
+                 {
+                    "DeviceName" : "/dev/xvda",
+                    "Ebs" : {
+                      "VolumeType" : "gp3",
+                      "DeleteOnTermination" : "true",
+                      "VolumeSize" : "8"
+                    }
+                  }
+              ],
+        "InstanceType": "t2.micro",
+        "SubnetId": {
+          "Ref": "EC2Subnets"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Ref": "namealarmcpu"
+            }
+          }
+        ],
+        "KeyName": {
+          "Ref": "SSHKey"
+        },
+        "IamInstanceProfile": {
+          "Ref": "ASGInstanceProfile"
+        },
+        "SecurityGroupIds": [
+          {
+            "Ref": "SecurityGroup"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Sub": "#!/bin/bash\nrpm -Uvh https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm\n/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource InstanceEC2 --region ${AWS::Region} --configsets default\n/opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource InstanceEC2 --region ${AWS::Region}\n"
+          }
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "configSets": {
+            "default": [
+              "01_setupCfnHup",
+              "02_config-amazon-cloudwatch-agent",
+              "03_restart_amazon-cloudwatch-agent"
+            ],
+            "UpdateEnvironment": [
+              "02_config-amazon-cloudwatch-agent",
+              "03_restart_amazon-cloudwatch-agent"
+            ]
+          },
+          "02_config-amazon-cloudwatch-agent": {
+            "files": {
+              "/opt/aws/amazon-cloudwatch-agent/bin/config.json": {
+                "content": {
+                  "Fn::Sub": "{\n \"agent\": {\n \"metrics_collection_interval\": 60,\n \"run_as_user\": \"root\"\n },\n \"metrics\": {\n  \"append_dimensions\": {\n \"AutoScalingGroupName\": \"${!aws:AutoScalingGroupName}\",\n \"InstanceId\": \"${!aws:InstanceId}\"\n },\n  \"metrics_collected\": {\n \"disk\": {\n \"measurement\": [\n \"used_percent\"\n ],\n \"metrics_collection_interval\": 60,\n \"resources\": [\n \"*\"\n ]\n },\n \"mem\": {\n \"measurement\": [\n \"mem_used_percent\"\n ],\n \"metrics_collection_interval\": 60\n }\n }\n }\n }\n"
+                },
+                "mode": "000755",
+                "owner": "root",
+                "group": "root"
+              }
+            }
+          },
+          "03_restart_amazon-cloudwatch-agent": {
+            "commands": {
+              "01_stop_service": {
+                "command": "/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a stop"
+              },
+              "02_start_service": {
+                "command": "/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json -s"
+              }
+            }
+          },
+          "01_setupCfnHup": {
+            "files": {
+              "/etc/cfn/cfn-hup.conf": {
+                "content": {
+                  "Fn::Sub": "[main]\nstack=${AWS::StackId}\nregion=${AWS::Region}\ninterval=1\n"
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              },
+              "/etc/cfn/hooks.d/amazon-cloudwatch-agent-auto-reloader.conf": {
+                "content": {
+                  "Fn::Sub": "[cfn-auto-reloader-hook]\ntriggers=post.update\npath=Resources.InstanceEC2.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent\naction=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource InstanceEC2 --region ${AWS::Region} --configsets UpdateEnvironment\nrunas=root\n"
+                },
+                "mode": "000400",
+                "owner": "root",
+                "group": "root"
+              },
+              "/lib/systemd/system/cfn-hup.service": {
+                "content": "[Unit]\nDescription=cfn-hup daemon\n[Service]\nType=simple\nExecStart=/opt/aws/bin/cfn-hup\nRestart=always\n[Install]\nWantedBy=multi-user.target\n"
+              }
+            },
+            "commands": {
+              "01enable_cfn_hup": {
+                "command": "systemctl enable cfn-hup.service\n"
+              },
+              "02start_cfn_hup": {
+                "command": "systemctl start cfn-hup.service\n"
+              }
+            }
+          }
+        }
+      }
+    },
+    "ASGInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "InstanceProfileName": {
+          "Ref": "namealarmcpu"
+        },
+        "Roles": [
+          {
+            "Ref": "ASGRole"
+          }
+        ]
+      }
+    },
+    "ASGRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/CloudWatchAgentAdminPolicy"
+        ],
+        "RoleName": {
+          "Ref": "namealarmcpu"
+        }
+      }
+    },
+    "SecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Security Group for Bastion Host to allow SSH",
+        "VpcId": {
+          "Ref": "VPCID"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "CPUAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "CPUUtilization",
+        "AlarmActions": [
+          {
+            "Ref": "NewSNS"
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "Namespace": "AWS/EC2",
+        "AlarmDescription": {
+          "Fn::Sub": "This alarm is created by ${Alarmdesc}"
+        },
+        "AlarmName": {
+          "Fn::Sub": "${namealarmcpu}-CPU-Utilization-${CpuThreshold}%"
+        },
+        "DatapointsToAlarm": 1,
+        "Threshold": {
+          "Ref": "CpuThreshold"
+        },
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceEC2"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "NewSNS"
+      ]
+    },
+    "MemoryAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "mem_used_percent",
+        "AlarmActions": [
+          {
+            "Ref": "NewSNS"
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "Namespace": "CWAgent",
+        "AlarmDescription": {
+          "Fn::Sub": "This alarm is created by ${Alarmdesc}"
+        },
+        "AlarmName": {
+          "Fn::Sub": "${namealarmcpu}-Memory-Utilization-${MemoryThreshold}%"
+        },
+        "DatapointsToAlarm": 1,
+        "Threshold": {
+          "Ref": "MemoryThreshold"
+        },
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceEC2"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "NewSNS"
+      ]
+    },
+    "DiskAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "disk_used_percent",
+        "AlarmActions": [
+          {
+            "Ref": "NewSNS"
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "Namespace": "CWAgent",
+        "AlarmDescription": {
+          "Fn::Sub": "This alarm is created by ${Alarmdesc}"
+        },
+        "AlarmName": {
+          "Fn::Sub": "${namealarmcpu}-Disk-Utilization-${DiskThreshold}%"
+        },
+          "Threshold": {
+          "Ref": "DiskThreshold"
+        },
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceEC2"
+            }
+          },
+          {
+            "Name": "device",
+            "Value": {
+              "Ref": "volume"
+            }
+          },
+          {
+            "Name": "fstype",
+            "Value": {
+              "Ref": "fstype"
+            }
+          },
+          {
+            "Name": "path",
+            "Value": "/"
+          }
+        ]
+      },
+      "DependsOn": [
+        "NewSNS"
+      ]
+    },
+    "SystemStatusCheckAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "StatusCheckFailed_System",
+        "AlarmActions": [
+          {
+            "Ref": "NewSNS"
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "Namespace": "AWS/EC2",
+        "AlarmDescription": {
+          "Ref": "Alarmdesc"
+        },
+        "AlarmName": {
+          "Fn::Sub": "${namealarmcpu}-System-Status-Check"
+        },
+        "DatapointsToAlarm": 1,
+        "Threshold": 1,
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceEC2"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "NewSNS"
+      ]
+    },
+    "InstanceStatusCheckAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "StatusCheckFailed_Instance",
+        "AlarmActions": [
+          {
+            "Ref": "NewSNS"
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "Namespace": "AWS/EC2",
+        "AlarmDescription": {
+          "Ref": "Alarmdesc"
+        },
+        "AlarmName": {
+          "Fn::Sub": "${namealarmcpu}-Instance-Status-Check"
+        },
+        "DatapointsToAlarm": 1,
+        "Threshold": 1,
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceEC2"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "NewSNS"
+      ]
+    },
+    "NewSNS": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "DisplayName": {
+          "Fn::Sub": "${namealarmcpu}-SNS"
+        },
+        "Subscription": [
+          {
+            "Endpoint": {
+              "Ref": "EmailId"
+            },
+            "Protocol": "email"
+          }
+        ],
+        "TopicName": {
+          "Fn::Sub": "${namealarmcpu}-SNS"
+        }
+      },
+      "DependsOn": [
+        "InstanceEC2"
+      ]
+    }
+  }
+}

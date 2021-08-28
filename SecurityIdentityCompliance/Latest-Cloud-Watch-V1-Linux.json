@@ -1,0 +1,247 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Just to test the alarm using cloudformation",
+  "Parameters": {
+    "Webserver1": {
+      "Description": "The EC2 instance ID to associate this alarm with.",
+      "Type": "AWS::EC2::Instance::Id"
+    },
+    "volume": {
+      "Description": "Provide disk's/folder's name (ex.: xvda1)",
+      "Type": "String",
+      "Default": "xvda1"
+    },
+    "fstype": {
+      "Description": "Choose fstype - ext4 or xfs -> Ubuntu and AmazonLinux, CentOS use xfs",
+      "Type": "String",
+      "Default": "xfs",
+      "AllowedValues": [
+        "ext4",
+        "xfs",
+        "btrfs"
+      ],
+      "ConstraintDescription": "You must specify ext4,xfs,or btrfs."
+    },
+    "namealarmcpu": {
+      "Description": "Please enter the Alarm name as WorkMates-Prod-Web",
+      "Type": "String",
+      "Default": "WorkMates-Prod-Web"
+    },
+    "EmailId": {
+      "Description": "Please enter the email ID for subscription ex. xyz@gmail.com",
+      "Type": "String",
+      "Default": "info@cloudworkmates.com"
+    }
+  },
+  "Resources": {
+    "CPUAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "CPUUtilization",
+        "AlarmActions": [
+          {
+            "Ref": "NewSNS"
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "Namespace": "AWS/EC2",
+        "AlarmDescription": {
+        "Fn::Sub": "${namealarmcpu}-CPU-Utilization-85%#Alarm"
+        },
+        "AlarmName": {
+          "Fn::Sub": "${namealarmcpu}-CPU-Utilization-85%#Alarm"
+        },
+        "DatapointsToAlarm": 1,
+        "Threshold": "85",
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "Webserver1"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "NewSNS"
+      ]
+    },
+    "MemoryAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "mem_used_percent",
+        "AlarmActions": [
+          {
+            "Ref": "NewSNS"
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "Namespace": "CWAgent",
+        "AlarmDescription": {
+        "Fn::Sub": "${namealarmcpu}-Memory-Utilization-85%#Alarm"
+        },
+        "AlarmName": {
+          "Fn::Sub": "${namealarmcpu}-Memory-Utilization-85%#Alarm"
+        },
+        "DatapointsToAlarm": 1,
+        "Threshold": "85",
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "Webserver1"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "NewSNS"
+      ]
+    },
+    "DiskAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "disk_used_percent",
+        "AlarmActions": [
+          {
+            "Ref": "NewSNS"
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "Namespace": "CWAgent",
+        "AlarmDescription": {
+        "Fn::Sub": "${namealarmcpu}-Disk-Utilization-85%#Alarm"
+        },
+        "AlarmName": {
+          "Fn::Sub": "${namealarmcpu}-Disk-Utilization-85%#Alarm"
+        },
+        "Threshold": "85",
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "Webserver1"
+            }
+          },
+          {
+            "Name": "device",
+            "Value": {
+              "Ref": "volume"
+            }
+          },
+          {
+            "Name": "fstype",
+            "Value": {
+              "Ref": "fstype"
+            }
+          },
+          {
+            "Name": "path",
+            "Value": "/"
+          }
+        ]
+      },
+      "DependsOn": [
+        "NewSNS"
+      ]
+    },
+    "SystemStatusCheckAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "StatusCheckFailed_System",
+        "AlarmActions": [
+          {
+            "Ref": "NewSNS"
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "Namespace": "AWS/EC2",
+        "AlarmDescription": {
+      "Fn::Sub": "${namealarmcpu}-System-Status-Check#Alarm"
+        },
+        "AlarmName": {
+          "Fn::Sub": "${namealarmcpu}-System-Status-Check#Alarm"
+        },
+        "DatapointsToAlarm": 1,
+        "Threshold": 1,
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "Webserver1"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "NewSNS"
+      ]
+    },
+    "InstanceStatusCheckAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "StatusCheckFailed_Instance",
+        "AlarmActions": [
+          {
+            "Ref": "NewSNS"
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "Namespace": "AWS/EC2",
+        "AlarmDescription": {
+        "Fn::Sub": "${namealarmcpu}-Instance-Status-Check#Alarm"
+        },
+        "AlarmName": {
+          "Fn::Sub": "${namealarmcpu}-Instance-Status-Check#Alarm"
+        },
+        "DatapointsToAlarm": 1,
+        "Threshold": 1,
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "Webserver1"
+            }
+          }
+        ]
+      },
+      "DependsOn": [
+        "NewSNS"
+      ]
+    },
+    "NewSNS": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "DisplayName": {
+          "Fn::Sub": "${namealarmcpu}-SNS"
+        },
+        "Subscription": [
+          {
+            "Endpoint": {
+              "Ref": "EmailId"
+            },
+            "Protocol": "email"
+          }
+        ],
+        "TopicName": {
+          "Fn::Sub": "${namealarmcpu}-SNS"
+        }
+      }
+    }
+  }
+}

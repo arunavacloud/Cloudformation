@@ -1,0 +1,60 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Basic LifecyclePolicy",
+  "Parameters": {
+      "WMAwsAccountId": {
+          "Type": "Number",
+          "Default": "464315288610",
+          "Description": "Please enter your master account AWS ID here."
+      }
+  },
+  "Resources": {
+    "BasicLifecyclePolicy": {
+      "Type": "AWS::DLM::LifecyclePolicy",
+      "Properties": {
+        "Description": "Lifecycle Policy using CloudFormation",
+        "State": "ENABLED",
+        "ExecutionRoleArn": {"Fn::Sub":"arn:aws:iam::${WMAwsAccountId}:role/AWSDataLifecycleManagerDefaultRole"},
+        "PolicyDetails": {
+          "ResourceTypes": [
+            "INSTANCE"
+          ],
+          "TargetTags": [
+            {
+              "Key": "Dlcm",
+              "Value": "yes"
+            }
+          ],
+          "Schedules": [
+            {
+              "Name": "Daily Snapshots",
+              "TagsToAdd": [
+                {
+                  "Key": "type",
+                  "Value": "DailySnapshot"
+                }
+              ],
+              "CreateRule": {
+                "Interval": 24,
+                "IntervalUnit": "HOURS",
+                "Times": [
+                  "18:00"
+                ]
+              },
+              "RetainRule": {
+                "Count": 7
+              },
+              "CopyTags": true
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Createdby",
+            "Value": "Workmates-Backup"
+          }
+        ]
+      }
+    }
+  }
+}

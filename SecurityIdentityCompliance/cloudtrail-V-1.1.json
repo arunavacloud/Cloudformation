@@ -1,0 +1,109 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "The AWS CloudFormation template creates CloudTrail & S3 and also enables CloudTrail for the account",
+  "Parameters": {
+    "ClientName": {
+      "Description": "Enter Client Name",
+      "Type": "String",
+	  "AllowedPattern": "[a-z]+",
+	  "Description": "Must Be all small letters in Client Name",
+	  "ConstraintDescription": "Must Be all small letters in Client Name"
+    }
+  },
+  "Resources": {
+    "CloudTrailS3Bucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Fn::Sub": "${ClientName}-cloudtrail-event-logs"
+        }
+      }
+    },
+    "CloudTrailBucketPolicy": {
+      "DependsOn": [
+        "CloudTrailS3Bucket"
+      ],
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "CloudTrailS3Bucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AWSCloudTrailAclCheck",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudtrail.amazonaws.com"
+              },
+              "Action": "s3:GetBucketAcl",
+              "Resource": {
+                "Fn::Sub": "arn:aws:s3:::${CloudTrailS3Bucket}"
+              }
+            },
+            {
+              "Sid": "AWSCloudTrailWrite",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudtrail.amazonaws.com"
+              },
+              "Action": "s3:PutObject",
+              "Resource": {
+                "Fn::Sub": "arn:aws:s3:::${CloudTrailS3Bucket}/AWSLogs/${AWS::AccountId}/*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "s3:x-amz-acl": "bucket-owner-full-control"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "MyCloudTrail": {
+      "DependsOn": [
+        "CloudTrailS3Bucket",
+        "CloudTrailBucketPolicy"
+
+      ],
+      "Type": "AWS::CloudTrail::Trail",
+      "Properties": {
+        "TrailName": {
+          "Fn::Sub": "${ClientName}-CT-EVENTS"
+        },
+
+        "S3BucketName": {
+          "Ref": "CloudTrailS3Bucket"
+        },
+        "Tags" : [ {
+  "Key" : "ManagedBy",
+  "Value" : "WorkMates"
+}],
+        "IsLogging": true
+      }
+    }
+  },
+  "Outputs": {
+    "CloudTrailS3Bucket": {
+      "Description": "Encrypted S3 Bucket for CloudTrail Logs",
+      "Value": {
+        "Ref": "CloudTrailS3Bucket"
+      }
+    },
+    "CloudTrailS3BucketPolicy": {
+      "Description": "S3 Bucket Policy for CloudTrail Logs",
+      "Value": {
+        "Ref": "CloudTrailBucketPolicy"
+      }
+    },
+    "CloudTrail": {
+      "Description": "CloudTrail",
+      "Value": {
+        "Ref": "MyCloudTrail"
+      }
+    }
+  }
+}
