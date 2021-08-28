@@ -1,0 +1,180 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template deploys a RDS PostgreSQL",
+    "Parameters": {
+      "VPC": {
+        "Type": "AWS::EC2::VPC::Id"
+      },
+      "RDSSubnetIdList": {
+        "Description": "Subnet ID List for Subnet Group Creation Allow Routing.",
+        "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud.",
+        "Type": "List<AWS::EC2::Subnet::Id>",
+        "Default": "subnet-0f0cc98c3d7d47933,subnet-0036bb1e2964cd58a,subnet-06f97ebb680263d5c,subnet-0b530a1463d38f399"
+      },
+        "DBInstanceIdentifier": {
+            "Type": "String",
+            "Default": "workmates-instance"
+        },
+        "DBEngineVersion": {
+            "Type": "String",
+            "Default": "13.2"
+        },
+        "DBInstanceClass": {
+            "Type": "String",
+            "Default": "db.t3.medium",
+            "AllowedValues": [
+                "db.t3.micro",
+                "db.t3.small",
+                "db.t3.medium",
+                "db.m5.large",
+                "db.m5.xlarge",
+                "db.m5.2xlarge",
+                "db.m5.4xlarge",
+                "db.m5.10xlarge",
+                "db.r5.large",
+                "db.r5.xlarge",
+                "db.r5.2xlarge",
+                "db.r5.4xlarge",
+                "db.r5.8xlarge",
+                "db.r5.16xlarge"
+            ]
+        },
+
+        "DBAllocatedStorage": {
+            "Type": "Number",
+            "Default": 20
+        },
+        "DBName": {
+            "Type": "String",
+            "Default": "DBName"
+        },
+        "DBUser": {
+            "Type": "String",
+            "Default": "DBUser"
+        },
+        "DBPassword": {
+            "Type": "String",
+            "Default": "DBPassword",
+            "NoEcho": true
+        }
+    },
+    "Resources": {
+      "RDSAccessSecurityGroup": {
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+          "GroupDescription": "Instance to RDS Access",
+          "VpcId": {
+            "Ref": "VPC"
+          },
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": {
+                "Fn::Sub": "${DBInstanceIdentifier}-SG"
+              }
+            }
+          ]
+        }
+      },
+      "AccessSecurityGroupIngress": {
+        "Type": "AWS::EC2::SecurityGroupIngress",
+        "DependsOn": "RDSAccessSecurityGroup",
+        "Properties": {
+          "GroupId": {
+            "Ref": "RDSAccessSecurityGroup"
+          },
+          "IpProtocol": "tcp",
+          "FromPort": "5432",
+          "ToPort": "5432",
+          "SourceSecurityGroupId": {
+            "Ref": "RDSAccessSecurityGroup"
+          }
+        }
+      },
+      "DbSubnetGroup": {
+        "Type": "AWS::RDS::DBSubnetGroup",
+        "Properties": {
+          "DBSubnetGroupDescription": {
+            "Fn::Join": [
+              "",
+              [
+                "RDS Subnet Group for ",
+                {
+                  "Ref": "DBInstanceIdentifier"
+                }
+              ]
+            ]
+          },
+          "SubnetIds": {
+            "Ref": "RDSSubnetIdList"
+          },
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": {
+                "Fn::Sub": "${DBInstanceIdentifier}-SubnetGroup"
+              }
+            }
+          ]
+        }
+      },
+        "PostgreInstance": {
+            "Type": "AWS::RDS::DBInstance",
+            "DependsOn": [
+              "DbSubnetGroup",
+              "RDSAccessSecurityGroup"
+            ],
+            "Properties": {
+                "DBInstanceIdentifier": {
+                    "Ref": "DBInstanceIdentifier"
+                },
+                "PubliclyAccessible" :false,
+                "DBName": {
+                    "Ref": "DBName"
+                },
+                "AllocatedStorage": {
+                    "Ref": "DBAllocatedStorage"
+                },
+                "DBSubnetGroupName": {
+                  "Ref": "DbSubnetGroup"
+                },
+                "VPCSecurityGroups": [
+                  {
+                    "Ref": "RDSAccessSecurityGroup"
+                  }
+                ],
+                "DBInstanceClass": {
+                    "Ref": "DBInstanceClass"
+                },
+                "StorageType": "gp2",
+                "Engine": "postgres",
+                "EngineVersion": {
+                    "Ref": "DBEngineVersion"
+                },
+                "MasterUsername": {
+                    "Ref": "DBUser"
+                },
+                "MasterUserPassword": {
+                    "Ref": "DBPassword"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "DBInstanceIdentifier"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "EndpointMaster": {
+            "Description": "Endpoint of the newly created RDS PostgreSQL master",
+            "Value": {
+                "Fn::GetAtt": [
+                    "PostgreInstance",
+                    "Endpoint.Address"
+                ]
+            }
+        }
+    }
+}

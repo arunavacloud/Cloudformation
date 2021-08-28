@@ -1,0 +1,203 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "ElastiCache and related resources stack created by Workmates",
+    "Parameters": {
+      "VPC": {
+        "Type": "AWS::EC2::VPC::Id"
+      },
+      "VPCCidr":{
+        "Type":"String",
+        "Description":"Provide VPC Cidr",
+        "Default":"0.0.0.0/0"
+      },
+      "SubnetIdList": {
+        "Description": "Subnet ID List for Subnet Group Creation Allow Routing.",
+        "ConstraintDescription": "must be a list of at least two existing subnets associated with at least two different availability zones. They should be residing in the selected Virtual Private Cloud.",
+        "Type": "List<AWS::EC2::Subnet::Id>",
+        "Default": "subnet-0f0cc98c3d7d47933,subnet-0036bb1e2964cd58a,subnet-06f97ebb680263d5c,subnet-0b530a1463d38f399"
+      },
+        "ClusterName": {
+            "Description": "Custom name of the cluster. Auto generated if you don't supply your own.",
+            "Type": "String"
+        },
+        "CacheNodeType": {
+            "Description": "Select the cache node. For More Information See https://docs.aws.amazon.com/AmazonElastiCache/latest/UserGuide/CacheNodes.SelectSize.html",
+            "Type": "String",
+            "Default": "cache.t3.micro",
+            "ConstraintDescription": "Node instance class not supported",
+            "AllowedValues": [
+                "cache.t3.micro",
+                "cache.t3.small",
+                "cache.t3.medium",
+                "cache.m5.large",
+                "cache.m5.xlarge",
+                "cache.m5.2xlarge",
+                "cache.m5.4xlarge",
+                "cache.m5.10xlarge",
+                "cache.r5.large",
+                "cache.r5.xlarge",
+                "cache.r5.2xlarge",
+                "cache.r5.4xlarge",
+                "cache.r5.8xlarge",
+                "cache.r5.16xlarge"
+            ]
+        },
+
+        "CacheNodeCount": {
+            "Description": "Number of nodes in the cluster. Only used with memcached engine, for redis this value will be set to 1.",
+            "Type": "Number",
+            "MinValue": 1,
+            "MaxValue": 15,
+            "ConstraintDescription": "Node count must be between 1 and 15",
+            "Default": 1
+        },
+        "AutoMinorVersionUpgrade": {
+            "Description": "Whether or not minor version upgrades to the cache engine should be applied automatically during the maintenance window.",
+            "Type": "String",
+            "Default": false,
+            "AllowedValues": [
+                true,
+                false
+            ]
+        }
+    },
+
+    "Resources": {
+        "SecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "ElastiCache Security Group",
+                "VpcId": { "Ref": "VPC" },
+                "SecurityGroupIngress": [
+                  {
+                    "IpProtocol": "tcp",
+                    "FromPort": "6379",
+                    "ToPort": "6379",
+                    "CidrIp": { "Ref": "VPCCidr" }
+                  }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${ClusterName}-ElastiCacheSecurityGroup"
+                        }
+                    }
+                ]
+            }
+        },
+        "SubnetGroup": {
+            "Type": "AWS::ElastiCache::SubnetGroup",
+            "Properties": {
+                "Description": "Cache Subnet Group",
+                "SubnetIds":
+                  { "Ref": "SubnetIdList" }
+
+            }
+        },
+        "ElastiCacheCluster": {
+            "Type": "AWS::ElastiCache::CacheCluster",
+            "Properties": {
+                "AutoMinorVersionUpgrade": {
+                    "Ref": "AutoMinorVersionUpgrade"
+                },
+                "Engine": "redis",
+                "CacheNodeType": {
+                    "Ref": "CacheNodeType"
+                },
+                "ClusterName": {
+                    "Ref": "ClusterName"
+                },
+                "NumCacheNodes":
+                        {
+                            "Ref": "CacheNodeCount"
+                        }
+                    ,
+                "CacheSubnetGroupName": {
+                    "Ref": "SubnetGroup"
+                },
+                "VpcSecurityGroupIds": [
+                    {
+                        "Fn::GetAtt": [
+                            "SecurityGroup",
+                        "GroupId"]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Ref": "ClusterName"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "ElastiCacheStackName": {
+            "Description": "ElastiCache Stack Name",
+            "Value": {
+                "Ref": "AWS::StackName"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-ElastiCacheName"
+                }
+            }
+        },
+        "ElastiCacheClusterArn": {
+            "Description": "ElastiCache Cluster Arn",
+            "Value": {
+                "Fn::Sub": "arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:cluster/${ElastiCacheCluster}"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-ElastiCacheClusterArn"
+                }
+            }
+        },
+        "ElastiCacheClusterId": {
+            "Description": "ElastiCache Cluster ID",
+            "Value": {
+                "Ref": "ElastiCacheCluster"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-ElastiCacheClusterID"
+                }
+            }
+        },
+        "ElastiCacheEngine": {
+            "Description": "ElastiCache engine",
+            "Value": "redis",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-ElastiCacheEngine"
+                }
+            }
+        },
+        "RedisEndpoint": {
+            "Description": "ElastiCache endpoint address",
+            "Value": { "Fn::GetAtt": [
+                            "ElastiCacheCluster",
+                            "RedisEndpoint.Address"
+                        ]
+                    },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-RedisEndpoint"
+                }
+            }
+        },
+        "ElastiCachePort": {
+            "Description": "ElastiCache port",
+            "Value": "6379",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-ElastiCachePort"
+                }
+            }
+        }
+    }
+}
